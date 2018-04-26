@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE StrictData #-}
 module Prob where
 
@@ -13,7 +14,6 @@ import Data.Bifunctor
 import Data.Foldable
 import Data.List
 import qualified Data.Map.Strict as M
-import Data.Monoid
 import qualified Data.Set as Set
 import Data.String
 import System.Random.MWC
@@ -67,8 +67,11 @@ data Stmt varTy
           (Stmt varTy)
   deriving (Show, Functor, Foldable, Traversable)
 
-data Prog varTy  = (Stmt varTy) `Return` (Expr varTy)
-  deriving (Show, Functor, Foldable, Traversable)
+data Prog r varTy where
+  Return :: Stmt varTy -> Expr varTy -> Prog Bool varTy
+  ReturnAll :: Stmt varTy -> Prog (ProgState' varTy) varTy
+deriving instance Show varTy => Show (Prog r varTy)
+deriving instance Foldable (Prog r)
 
 instance IsString (Expr String) where
   fromString = Var
@@ -126,8 +129,9 @@ evalStmt s@(While e stmt) = do
     then evalStmt stmt >> evalStmt s
     else pure ()
 
-evalProg :: (Show vt, Ord vt) => Prog vt -> Eval vt s Bool
+evalProg :: (Show vt, Ord vt) => Prog r vt -> Eval vt s r
 evalProg (Return stmt expr) = evalStmt stmt >> evalExpr expr
+evalProg (ReturnAll stmt) = evalStmt stmt >> gets fst
 
 --------------------------------------------------------------------------------
 -- Denotational Semantics
@@ -137,9 +141,10 @@ evalProg (Return stmt expr) = evalStmt stmt >> evalExpr expr
 type ProgState' vt = M.Map vt Bool
 
 sumOverAllPossibleStates :: (Num r, Ord vt) => Set.Set vt -> (ProgState' vt -> r) -> r
-sumOverAllPossibleStates vars g = sum (map g allPossibleStates)
-  where
-    allPossibleStates = foldr (\var -> concatMap (\st -> [M.insert var True st, M.insert var False st])) [M.empty] vars
+sumOverAllPossibleStates vars g = sum (map g (allPossibleStates vars))
+
+allPossibleStates :: (Ord k, Foldable t) => t k -> [M.Map k Bool]
+allPossibleStates = foldr (\var -> concatMap (\st -> [M.insert var True st, M.insert var False st])) [M.empty]
 
 denExpr :: (Show vt, Ord vt) => Expr vt -> ProgState' vt -> Bool
 denExpr (Var x) sigma = fromMaybe (error $ "undefined variable " ++ show x) $ M.lookup x sigma
@@ -167,30 +172,45 @@ denStmt (If e (Then s1) (Else s2)) sigma' sigma
 denStmt (While _ _) _ _ = undefined -- XXX
 denStmt (Observe _) _ _ = error "not allowed to call observe in the middle of a program"
 
-
-denProg :: (Show vt, Ord vt) => Prog vt -> [(Bool, Rational)]
-denProg ((s `Seq` Observe e1) `Return` e2) = [(False, 1 - probReturnTrue), (True, probReturnTrue)]
+findDenProg :: (Foldable t, Ord vt) => t vt -> (Set.Set vt -> ProgState' vt -> r) -> r
+findDenProg p g = g vars initialState
   where
-    vars = Set.fromList (toList s <> toList e1 <> toList e2)
-          -- initial state: all variables initialized to False
-    initialState
-     = M.fromSet (const False) vars
-    probReturnTrue =
-      sumOverAllPossibleStates vars (\sigma -> if denExpr (e1 `And` e2) sigma then denStmt s sigma initialState else 0)
-      /
-      sumOverAllPossibleStates vars (\sigma -> if denExpr e1 sigma then denStmt s sigma initialState else 0)
+    vars = Set.fromList (toList p)
+    initialState = M.fromSet (const False) vars
+                   -- initial state: all variables initialized to False
 
-denProg (s `Return` e) = [(False, 1 - probReturnTrue), (True, probReturnTrue)]
-  where
-    vars = Set.fromList (toList s <> toList e)
-          -- initial state: all variables initialized to False
-    initialState
-     = M.fromSet (const False) vars
+denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
+denProg p@((s `Seq` Observe e1) `Return` e2) =
+  findDenProg p $ \vars initialState ->
+    let probReturnTrue =
+          sumOverAllPossibleStates vars (\sigma -> if denExpr (e1 `And` e2) sigma then denStmt s sigma initialState else 0)
+          /
+          sumOverAllPossibleStates vars (\sigma -> if denExpr e1 sigma then denStmt s sigma initialState else 0)
+    in [(False, 1 - probReturnTrue), (True, probReturnTrue)]
+
+denProg p@(s `Return` e) =
+  findDenProg p $ \vars initialState ->
+  let
     probReturnTrue =
       sumOverAllPossibleStates vars $ \sigma ->
         if denExpr e sigma
           then denStmt s sigma initialState
           else 0
+  in [(False, 1 - probReturnTrue), (True, probReturnTrue)]
+
+denProg (ReturnAll (s `Seq` (Observe e))) =
+  renormalize $ findDenProg s $ \vars initialState ->
+    map
+      (\endingState -> (endingState, denStmt s endingState initialState))
+      (filter (denExpr e) (allPossibleStates vars))
+
+denProg (ReturnAll s) =
+  findDenProg s $ \vars initialState ->
+    map (\endingState -> (endingState, denStmt s endingState initialState)) (allPossibleStates vars)
+
+renormalize :: Fractional c => [(a, c)] -> [(a, c)]
+renormalize l = map (second (/tot)) l
+  where tot = sum (map snd l)
 
 --------------------------------------------------------------------------------
 -- Utilities
@@ -202,13 +222,13 @@ pr = putStrLn . groom
 tally :: Ord a => [a] -> [(a, Int)]
 tally = map (liftA2 (,) head length) . group . sort
 
-sampled :: (Show vt, Ord vt) => Prog vt -> IO [(Bool, Int)]
+sampled :: (Show vt, Ord vt, Ord r) => Prog r vt -> IO [(r, Int)]
 sampled prog = tally <$> runEs 10000 (evalProg prog)
 
 --------------------------------------------------------------------------------
 -- Example Programs
 --------------------------------------------------------------------------------
-prog1 :: Prog String
+prog1 :: Prog Bool String
 prog1 = "c1" :~ Bernoulli 0.5 `Seq` "c2" :~ Bernoulli 0.5 `Return` "c1" `And` "c2"
 
 prog1Sampled :: IO [(Bool, Int)]
@@ -217,7 +237,7 @@ prog1Sampled = sampled prog1
 prog1Den :: [(Bool, Rational)]
 prog1Den = denProg prog1
 
-prog2 :: Prog String
+prog2 :: Prog Bool String
 prog2 = "c1" :~ Bernoulli 0.5 `Seq` "c2" :~ Bernoulli 0.5 `Seq` Observe ("c1" `Or` "c2") `Return` "c1" `And` "c2"
 
 prog2Sampled :: IO [(Bool, Int)]
@@ -225,3 +245,9 @@ prog2Sampled = sampled prog2
 
 prog2Den :: [(Bool, Rational)]
 prog2Den = denProg prog2
+
+prog1' :: Prog (M.Map String Bool) String
+prog1' = ReturnAll ("c1" :~ Bernoulli 0.5 `Seq` "c2" :~ Bernoulli 0.5 )
+
+prog2' :: Prog (M.Map String Bool) String
+prog2' = ReturnAll ("c1" :~ Bernoulli 0.5 `Seq` "c2" :~ Bernoulli 0.5 `Seq` Observe ("c1" `Or` "c2") )
