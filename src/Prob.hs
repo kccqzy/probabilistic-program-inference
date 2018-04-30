@@ -198,11 +198,8 @@ denProg p@(s `Return` e) =
           else 0
   in [(False, 1 - probReturnTrue), (True, probReturnTrue)]
 
-denProg (ReturnAll (s `Seq` (Observe e))) =
-  renormalize $ findDenProg s $ \vars initialState ->
-    map
-      (\endingState -> (endingState, denStmt s endingState initialState))
-      (filter (denExpr e) (allPossibleStates vars))
+denProg (ReturnAll (s `Seq` Observe e)) =
+  renormalize $ filter (\(sigma, _) -> denExpr e sigma) $ denProg (ReturnAll s)
 
 denProg (ReturnAll s) =
   findDenProg s $ \vars initialState ->
@@ -251,3 +248,15 @@ prog1' = ReturnAll ("c1" :~ Bernoulli 0.5 `Seq` "c2" :~ Bernoulli 0.5 )
 
 prog2' :: Prog (M.Map String Bool) String
 prog2' = ReturnAll ("c1" :~ Bernoulli 0.5 `Seq` "c2" :~ Bernoulli 0.5 `Seq` Observe ("c1" `Or` "c2") )
+
+progDice :: Prog (M.Map String Bool) String
+progDice =
+  ReturnAll (
+  "bit 0" :~ Bernoulli 0.5 `Seq`
+  "bit 1" :~ Bernoulli 0.5 `Seq`
+  "bit 2" :~ Bernoulli 0.5 `Seq`
+  -- not all zeroes
+  Observe ("bit 0" `Or` "bit 1" `Or` "bit 2") `Seq`
+  -- not all ones
+  Observe (Not "bit 0" `Or` Not "bit 1" `Or` Not "bit 2")
+  )
