@@ -142,25 +142,21 @@ evalProg (ReturnAll stmt) = evalStmt stmt >> gets fst
 -- assignments. We do not need a random number generator here.
 type ProgState' vt = M.Map vt Bool
 
--- | A polynomial, represented by an increasing sequence of factors.
--- Here [] means zero, [a] means a*x^0, [a,b,c] means a*x^0+b*x^1+c*c^2.
-newtype Poly = Poly [Rational] deriving (Show)
+-- | A linear polynomial of the form a+bx.
+data Lin = Lin Rational Rational deriving (Show)
 
-instance Num Poly where
-  fromInteger 0 = Poly []
-  fromInteger x = Poly [fromInteger x]
+instance Num Lin where
+  fromInteger x = Lin (fromInteger x) 0
 
-  Poly [] + a = a
-  Poly [0] + a = a
-  a + Poly [] = a
-  a + Poly [0] = a
-  Poly (a:as) + Poly (b:bs) = case Poly as + Poly bs of Poly cs -> Poly (a+b:cs)
+  Lin a1 b1 + Lin a2 b2 = Lin (a1+a2) (b1+b2)
 
-  negate (Poly as) = Poly (map negate as)
+  negate (Lin a b) = Lin (negate a) (negate b)
 
-  Poly [] * _ = Poly []
-  Poly [0] * _ = Poly []
-  Poly (a:as) * Poly bs = Poly (map (a*) bs) + case Poly as * Poly bs of Poly cs -> Poly (0:cs)
+  Lin 0 0 * _ = Lin 0 0 -- short circuiting; important for performance
+  _ * Lin 0 0 = Lin 0 0 -- short circuiting; important for performance
+  Lin a b * Lin c d
+    | b * d == 0 = Lin (a * c) (a * d + b * c)
+    | otherwise = error "quadratic"
 
   abs = error "unsupported operation: abs"
   signum = error "unsupported operation: signum"
@@ -182,7 +178,7 @@ denExpr (Not a) sigma = not (denExpr a sigma)
 data CurrentLoop vt = CurrentLoop (Expr vt) (Stmt vt) (ProgState' vt) (ProgState' vt)
   deriving (Show, Eq)
 
-denStmt :: (Show vt, Ord vt) => Maybe (CurrentLoop vt) -> Stmt vt -> ProgState' vt -> ProgState' vt -> Poly
+denStmt :: (Show vt, Ord vt) => Maybe (CurrentLoop vt) -> Stmt vt -> ProgState' vt -> ProgState' vt -> Lin
 denStmt _ Skip sigma' sigma
   | sigma' == sigma = 1
   | otherwise = 0
@@ -190,8 +186,8 @@ denStmt _ (x := e) sigma' sigma
   | sigma' == M.insert x (denExpr e sigma) sigma = 1
   | otherwise = 0
 denStmt _ (x :~ Bernoulli theta) sigma' sigma
-  | sigma' == M.insert x True sigma = Poly [theta]
-  | sigma' == M.insert x False sigma = Poly [1 - theta]
+  | sigma' == M.insert x True sigma = ratToLin theta
+  | sigma' == M.insert x False sigma = ratToLin (1 - theta)
   | otherwise = 0
 denStmt cl (Seq s1 s2) sigma' sigma =
   sumOverAllPossibleStates (M.keysSet sigma) $ \sigma'' ->
@@ -204,29 +200,25 @@ denStmt _ (Observe e) sigma' sigma -- requires renormalization at the end
   | otherwise = 0
 denStmt Nothing loop@(While e s) sigma' sigma
   | denExpr e sigma' = 0 -- performance
-  | otherwise=
-  ratToPoly $
-  solvePoly $ denStmt (Just (CurrentLoop e s sigma' sigma)) (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
+  | otherwise =
+    ratToLin $
+    solveLin $ denStmt (Just (CurrentLoop e s sigma' sigma)) (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
 denStmt (Just cl) loop@(While e s) sigma' sigma
   | denExpr e sigma' = 0 -- performance
-  | cl == nl = Poly [0, 1]
+  | cl == nl = Lin 0 1
   | otherwise =
     denStmt (Just cl) (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
   where nl = CurrentLoop e s sigma' sigma
 
-solvePoly :: Poly -> Rational
-solvePoly (Poly []) = 0
-solvePoly (Poly [a]) = a
-solvePoly (Poly [a,b]) = negate a / (b - 1) -- NOTE this is a+bx=x
-solvePoly _ = error "quadratic not supported"
+solveLin :: Lin -> Rational
+solveLin (Lin a b) = negate a / (b - 1)
 
-ratToPoly :: Rational -> Poly
-ratToPoly a = Poly [a]
+ratToLin :: Rational -> Lin
+ratToLin a = Lin a 0
 
-polyToRat :: Poly -> Rational
-polyToRat (Poly []) = 0
-polyToRat (Poly [a]) = a
-polyToRat _ = error "polynomial contains variables"
+linToRat :: Lin -> Rational
+linToRat (Lin a 0) = a
+linToRat _ = error "contains variables"
 
 unrollWhile :: Expr varTy -> Stmt varTy -> Int -> Stmt varTy
 unrollWhile e s = unroll
@@ -242,7 +234,7 @@ findDenProg p g = g vars initialState
 
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
 denProg p@(s `Return` e) =
-  renormalize $ (fmap.fmap) polyToRat $ findDenProg p $ \vars initialState ->
+  renormalize $ (fmap.fmap) linToRat $ findDenProg p $ \vars initialState ->
   let
     probReturnTrue =
       sumOverAllPossibleStates vars $ \sigma ->
@@ -252,7 +244,7 @@ denProg p@(s `Return` e) =
   in [(False, 1 - probReturnTrue), (True, probReturnTrue)]
 
 denProg (ReturnAll s) =
-  renormalize $ (fmap.fmap) polyToRat $ findDenProg s $ \vars initialState ->
+  renormalize $ (fmap.fmap) linToRat $ findDenProg s $ \vars initialState ->
     map (\endingState -> (endingState, denStmt Nothing s endingState initialState)) (allPossibleStates vars)
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]
