@@ -71,7 +71,7 @@ data Stmt varTy
 
 data Prog r varTy where
   Return :: Stmt varTy -> Expr varTy -> Prog Bool varTy
-  ReturnAll :: Stmt varTy -> Prog (ProgState' varTy) varTy
+  ReturnAll :: Stmt varTy -> Prog (Sigma varTy) varTy
 deriving instance Show varTy => Show (Prog r varTy)
 deriving instance Foldable (Prog r)
 
@@ -138,9 +138,8 @@ evalProg (ReturnAll stmt) = evalStmt stmt >> gets fst
 --------------------------------------------------------------------------------
 -- Denotational Semantics
 --------------------------------------------------------------------------------
--- | The program state in denotational style is just the set of all variables
--- assignments. We do not need a random number generator here.
-type ProgState' vt = M.Map vt Bool
+-- | Sigma is just the set of all variables assignments.
+type Sigma vt = M.Map vt Bool
 
 -- | A linear polynomial of the form a+bx.
 data Lin = Lin Rational Rational deriving (Show)
@@ -161,13 +160,13 @@ instance Num Lin where
   signum = error "unsupported operation: signum"
 
 
-sumOverAllPossibleStates :: (Num r, Ord vt) => Set.Set vt -> (ProgState' vt -> r) -> r
+sumOverAllPossibleStates :: (Num r, Ord vt) => Set.Set vt -> (Sigma vt -> r) -> r
 sumOverAllPossibleStates vars g = sum (map g (allPossibleStates vars))
 
 allPossibleStates :: (Ord k, Foldable t) => t k -> [M.Map k Bool]
 allPossibleStates = foldr (\var -> concatMap (\st -> [M.insert var True st, M.insert var False st])) [M.empty]
 
-denExpr :: (Show vt, Ord vt) => Expr vt -> ProgState' vt -> Bool
+denExpr :: (Show vt, Ord vt) => Expr vt -> Sigma vt -> Bool
 denExpr (Var x) sigma = fromMaybe (error $ "undefined variable " ++ show x) $ M.lookup x sigma
 denExpr (Constant d) _ = d
 denExpr (Or a b) sigma = denExpr a sigma || denExpr b sigma
@@ -177,11 +176,11 @@ denExpr (Not a) sigma = not (denExpr a sigma)
 data CurrentLoop vt = CurrentLoop
   { clGuard :: Expr vt
   , clBody :: Stmt vt
-  , clSigma' :: ProgState' vt
-  , clSigma :: ProgState' vt
+  , clSigma' :: Sigma vt
+  , clSigma :: Sigma vt
   } deriving (Show)
 
-denStmt :: (Show vt, Ord vt) => Maybe (CurrentLoop vt) -> Stmt vt -> ProgState' vt -> ProgState' vt -> Lin
+denStmt :: (Show vt, Ord vt) => Maybe (CurrentLoop vt) -> Stmt vt -> Sigma vt -> Sigma vt -> Lin
 denStmt _ Skip sigma' sigma
   | sigma' == sigma = 1
   | otherwise = 0
@@ -224,7 +223,7 @@ linToRat :: Lin -> Rational
 linToRat (Lin a 0) = a
 linToRat _ = error "contains variables"
 
-findDenProg :: (Foldable t, Ord vt) => t vt -> (Set.Set vt -> ProgState' vt -> r) -> r
+findDenProg :: (Foldable t, Ord vt) => t vt -> (Set.Set vt -> Sigma vt -> r) -> r
 findDenProg p g = g vars initialState
   where
     vars = Set.fromList (toList p)
