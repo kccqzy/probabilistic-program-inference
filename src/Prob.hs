@@ -314,6 +314,7 @@ progDice =
 progGeo :: Prog Bool String
 progGeo =
   ("b" := Constant True `Seq`
+   "p" := Constant False `Seq`
    While "b" ("b" :~ Bernoulli 0.5 `Seq`
               "p" := Not "p"))
   `Return` "p"
