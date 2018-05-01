@@ -332,3 +332,18 @@ progGeo2 =
         (Else (If "x1"
               (Then ("x1" := Constant False `Seq` "x2" := Constant True))
               (Else (If "x2" (Then ("x2" := Constant False `Seq` "x0" := Constant True)) (Else Skip)))))
+
+progGeo3 :: Prog (M.Map String Bool) String
+progGeo3 =
+  ReturnAll("b" := Constant True `Seq`
+   "x0" := Constant True `Seq`
+   "x1" := Constant False `Seq`
+   "x2" := Constant False `Seq`
+   While "b" ("b" :~ Bernoulli 0.5 `Seq` next))
+  where
+    next =
+      If "x0"
+        (Then ("x0" := Constant False `Seq` "x1" := Constant True))
+        (Else (If "x1"
+              (Then ("x1" := Constant False `Seq` "x2" := Constant True))
+              (Else (If "x2" (Then ("x2" := Constant False `Seq` "x1" := Constant True)) (Else Skip)))))
