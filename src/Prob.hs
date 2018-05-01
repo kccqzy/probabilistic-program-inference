@@ -205,7 +205,6 @@ denStmt _ (Observe e) sigma' sigma -- requires renormalization at the end
 denStmt Nothing loop@(While e s) sigma' sigma
   | denExpr e sigma' = 0 -- performance
   | otherwise =
-    ratToLin $
     solveLin $ denStmt (Just (CurrentLoop e s sigma' sigma)) (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
 denStmt cl@(Just CurrentLoop {..}) loop@(While e s) sigma' sigma
   | denExpr e sigma' = 0 -- performance
@@ -219,8 +218,8 @@ denStmt cl@(Just CurrentLoop {..}) loop@(While e s) sigma' sigma
     -- nested loop
    = denStmt Nothing loop sigma' sigma
 
-solveLin :: Lin -> Rational
-solveLin (Lin a b) = negate a / (b - 1)
+solveLin :: Lin -> Lin
+solveLin (Lin a b) = Lin (a / (1 - b)) 0
 
 ratToLin :: Rational -> Lin
 ratToLin a = Lin a 0
