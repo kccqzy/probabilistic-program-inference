@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE StrictData #-}
+{-# LANGUAGE TypeApplications #-}
 module Prob where
 
 import Control.Applicative
@@ -29,11 +30,11 @@ data Expr varTy
   | (Expr varTy) `And` (Expr varTy)
   | (Expr varTy) `Or` (Expr varTy)
   | Not (Expr varTy)
-  deriving (Show, Functor, Foldable, Traversable)
+  deriving (Show, Eq, Functor, Foldable, Traversable)
 
 data Dist =
   Bernoulli Rational
-  deriving (Show)
+  deriving (Show, Eq)
 
 infix 2 :=
 
@@ -49,11 +50,11 @@ infix 0 `Return`
 
 newtype Then varTy =
   Then (Stmt varTy)
-  deriving (Show, Functor, Foldable, Traversable)
+  deriving (Show, Eq, Functor, Foldable, Traversable)
 
 newtype Else varTy =
   Else (Stmt varTy)
-  deriving (Show, Functor, Foldable, Traversable)
+  deriving (Show, Eq, Functor, Foldable, Traversable)
 
 data Stmt varTy
   = Skip
@@ -66,7 +67,7 @@ data Stmt varTy
        (Else varTy)
   | While (Expr varTy)
           (Stmt varTy)
-  deriving (Show, Functor, Foldable, Traversable)
+  deriving (Show, Eq, Functor, Foldable, Traversable)
 
 data Prog r varTy where
   Return :: Stmt varTy -> Expr varTy -> Prog Bool varTy
@@ -141,6 +142,30 @@ evalProg (ReturnAll stmt) = evalStmt stmt >> gets fst
 -- assignments. We do not need a random number generator here.
 type ProgState' vt = M.Map vt Bool
 
+-- | A polynomial, represented by an increasing sequence of factors.
+-- Here [] means zero, [a] means a*x^0, [a,b,c] means a*x^0+b*x^1+c*c^2.
+newtype Poly = Poly [Rational] deriving (Show)
+
+instance Num Poly where
+  fromInteger 0 = Poly []
+  fromInteger x = Poly [fromInteger x]
+
+  Poly [] + a = a
+  Poly [0] + a = a
+  a + Poly [] = a
+  a + Poly [0] = a
+  Poly (a:as) + Poly (b:bs) = case Poly as + Poly bs of Poly cs -> Poly (a+b:cs)
+
+  negate (Poly as) = Poly (map negate as)
+
+  Poly [] * _ = Poly []
+  Poly [0] * _ = Poly []
+  Poly (a:as) * Poly bs = Poly (map (a*) bs) + case Poly as * Poly bs of Poly cs -> Poly (0:cs)
+
+  abs = error "unsupported operation: abs"
+  signum = error "unsupported operation: signum"
+
+
 sumOverAllPossibleStates :: (Num r, Ord vt) => Set.Set vt -> (ProgState' vt -> r) -> r
 sumOverAllPossibleStates vars g = sum (map g (allPossibleStates vars))
 
@@ -154,33 +179,54 @@ denExpr (Or a b) sigma = denExpr a sigma || denExpr b sigma
 denExpr (And a b) sigma = denExpr a sigma && denExpr b sigma
 denExpr (Not a) sigma = not (denExpr a sigma)
 
-denStmt :: (Show vt, Ord vt) => Stmt vt -> ProgState' vt -> ProgState' vt -> Rational
-denStmt Skip sigma' sigma
+data CurrentLoop vt = CurrentLoop (Expr vt) (Stmt vt) (ProgState' vt) (ProgState' vt)
+  deriving (Show, Eq)
+
+denStmt :: (Show vt, Ord vt) => Maybe (CurrentLoop vt) -> Stmt vt -> ProgState' vt -> ProgState' vt -> Poly
+denStmt _ Skip sigma' sigma
   | sigma' == sigma = 1
   | otherwise = 0
-denStmt (x := e) sigma' sigma
+denStmt _ (x := e) sigma' sigma
   | sigma' == M.insert x (denExpr e sigma) sigma = 1
   | otherwise = 0
-denStmt (x :~ Bernoulli theta) sigma' sigma
-  | sigma' == M.insert x True sigma = theta
-  | sigma' == M.insert x False sigma = 1 - theta
+denStmt _ (x :~ Bernoulli theta) sigma' sigma
+  | sigma' == M.insert x True sigma = Poly [theta]
+  | sigma' == M.insert x False sigma = Poly [1 - theta]
   | otherwise = 0
-denStmt (Seq s1 s2) sigma' sigma =
+denStmt cl (Seq s1 s2) sigma' sigma =
   sumOverAllPossibleStates (M.keysSet sigma) $ \sigma'' ->
-  case denStmt s1 sigma'' sigma of
-    0 -> 0 -- short circuit the common case
-    r -> r * denStmt s2 sigma' sigma''
-denStmt (If e (Then s1) (Else s2)) sigma' sigma
-  | denExpr e sigma = denStmt s1 sigma' sigma
-  | otherwise = denStmt s2 sigma' sigma
-denStmt (Observe e) sigma' sigma -- requires renormalization at the end
+  denStmt cl s1 sigma'' sigma * denStmt cl s2 sigma' sigma''
+denStmt cl (If e (Then s1) (Else s2)) sigma' sigma
+  | denExpr e sigma = denStmt cl s1 sigma' sigma
+  | otherwise = denStmt cl s2 sigma' sigma
+denStmt _ (Observe e) sigma' sigma -- requires renormalization at the end
   | sigma' == sigma && denExpr e sigma = 1
   | otherwise = 0
-denStmt (While e s) sigma' sigma =
-  lim $ \n -> denStmt (unrollWhile e s n) sigma' sigma
+denStmt Nothing loop@(While e s) sigma' sigma
+  | denExpr e sigma' = 0 -- performance
+  | otherwise=
+  ratToPoly $
+  solvePoly $ denStmt (Just (CurrentLoop e s sigma' sigma)) (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
+denStmt (Just cl) loop@(While e s) sigma' sigma
+  | denExpr e sigma' = 0 -- performance
+  | cl == nl = Poly [0, 1]
+  | otherwise =
+    denStmt (Just cl) (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
+  where nl = CurrentLoop e s sigma' sigma
 
-lim :: (Int -> Rational) -> Rational
-lim f = f 3
+solvePoly :: Poly -> Rational
+solvePoly (Poly []) = 0
+solvePoly (Poly [a]) = a
+solvePoly (Poly [a,b]) = negate a / (b - 1) -- NOTE this is a+bx=x
+solvePoly _ = error "quadratic not supported"
+
+ratToPoly :: Rational -> Poly
+ratToPoly a = Poly [a]
+
+polyToRat :: Poly -> Rational
+polyToRat (Poly []) = 0
+polyToRat (Poly [a]) = a
+polyToRat _ = error "polynomial contains variables"
 
 unrollWhile :: Expr varTy -> Stmt varTy -> Int -> Stmt varTy
 unrollWhile e s = unroll
@@ -196,18 +242,18 @@ findDenProg p g = g vars initialState
 
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
 denProg p@(s `Return` e) =
-  renormalize $ findDenProg p $ \vars initialState ->
+  renormalize $ (fmap.fmap) polyToRat $ findDenProg p $ \vars initialState ->
   let
     probReturnTrue =
       sumOverAllPossibleStates vars $ \sigma ->
         if denExpr e sigma
-          then denStmt s sigma initialState
+          then denStmt Nothing s sigma initialState
           else 0
   in [(False, 1 - probReturnTrue), (True, probReturnTrue)]
 
 denProg (ReturnAll s) =
-  renormalize $ findDenProg s $ \vars initialState ->
-    map (\endingState -> (endingState, denStmt s endingState initialState)) (allPossibleStates vars)
+  renormalize $ (fmap.fmap) polyToRat $ findDenProg s $ \vars initialState ->
+    map (\endingState -> (endingState, denStmt Nothing s endingState initialState)) (allPossibleStates vars)
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]
 renormalize l = map (second (/tot)) l
@@ -268,7 +314,6 @@ progDice =
 progGeo :: Prog Bool String
 progGeo =
   ("b" := Constant True `Seq`
-   "p" := Constant False `Seq`
    While "b" ("b" :~ Bernoulli 0.5 `Seq`
-              "parity" := Not "parity"))
+              "p" := Not "p"))
   `Return` "p"
