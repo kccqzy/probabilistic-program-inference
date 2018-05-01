@@ -3,9 +3,9 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE StrictData #-}
-{-# LANGUAGE TypeApplications #-}
 module Prob where
 
 import Control.Applicative
@@ -175,8 +175,12 @@ denExpr (Or a b) sigma = denExpr a sigma || denExpr b sigma
 denExpr (And a b) sigma = denExpr a sigma && denExpr b sigma
 denExpr (Not a) sigma = not (denExpr a sigma)
 
-data CurrentLoop vt = CurrentLoop (Expr vt) (Stmt vt) (ProgState' vt) (ProgState' vt)
-  deriving (Show, Eq)
+data CurrentLoop vt = CurrentLoop
+  { clGuard :: Expr vt
+  , clBody :: Stmt vt
+  , clSigma' :: ProgState' vt
+  , clSigma :: ProgState' vt
+  } deriving (Show)
 
 denStmt :: (Show vt, Ord vt) => Maybe (CurrentLoop vt) -> Stmt vt -> ProgState' vt -> ProgState' vt -> Lin
 denStmt _ Skip sigma' sigma
@@ -203,12 +207,17 @@ denStmt Nothing loop@(While e s) sigma' sigma
   | otherwise =
     ratToLin $
     solveLin $ denStmt (Just (CurrentLoop e s sigma' sigma)) (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
-denStmt (Just cl) loop@(While e s) sigma' sigma
+denStmt cl@(Just CurrentLoop {..}) loop@(While e s) sigma' sigma
   | denExpr e sigma' = 0 -- performance
-  | cl == nl = Lin 0 1
-  | otherwise =
-    denStmt (Just cl) (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
-  where nl = CurrentLoop e s sigma' sigma
+  | clGuard == e && clBody == s
+    -- same loop
+   =
+    if clSigma' == sigma' && clSigma == sigma
+      then Lin 0 1
+      else denStmt cl (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
+  | otherwise
+    -- nested loop
+   = denStmt Nothing loop sigma' sigma
 
 solveLin :: Lin -> Rational
 solveLin (Lin a b) = negate a / (b - 1)
