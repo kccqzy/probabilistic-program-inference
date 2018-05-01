@@ -233,22 +233,30 @@ findDenProg p g = g vars initialState
 
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
 denProg p@(s `Return` e) =
-  renormalize $ (fmap.fmap) linToRat $ findDenProg p $ \vars initialState ->
-  let
-    probReturnTrue =
-      sumOverAllPossibleStates vars $ \sigma ->
-        if denExpr e sigma
-          then denStmt Nothing s sigma initialState
-          else 0
-  in [(False, 1 - probReturnTrue), (True, probReturnTrue)]
+  renormalize $
+  nonzeroes $
+  (fmap . fmap) linToRat $
+  findDenProg p $ \vars initialState ->
+    let probReturnTrue =
+          sumOverAllPossibleStates vars $ \sigma ->
+            if denExpr e sigma
+              then denStmt Nothing s sigma initialState
+              else 0
+    in [(False, 1 - probReturnTrue), (True, probReturnTrue)]
 
 denProg (ReturnAll s) =
-  renormalize $ (fmap.fmap) linToRat $ findDenProg s $ \vars initialState ->
+  renormalize $
+  nonzeroes $
+  (fmap . fmap) linToRat $
+  findDenProg s $ \vars initialState ->
     map (\endingState -> (endingState, denStmt Nothing s endingState initialState)) (allPossibleStates vars)
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]
 renormalize l = map (second (/tot)) l
   where tot = sum (map snd l)
+
+nonzeroes :: (Num c, Ord c) => [(a, c)] -> [(a, c)]
+nonzeroes = filter ((>0) . snd)
 
 --------------------------------------------------------------------------------
 -- Utilities
@@ -309,3 +317,18 @@ progGeo =
    While "b" ("b" :~ Bernoulli 0.5 `Seq`
               "p" := Not "p"))
   `Return` "p"
+
+progGeo2 :: Prog (M.Map String Bool) String
+progGeo2 =
+  ReturnAll("b" := Constant True `Seq`
+   "x0" := Constant True `Seq`
+   "x1" := Constant False `Seq`
+   "x2" := Constant False `Seq`
+   While "b" ("b" :~ Bernoulli 0.5 `Seq` next))
+  where
+    next =
+      If "x0"
+        (Then ("x0" := Constant False `Seq` "x1" := Constant True))
+        (Else (If "x1"
+              (Then ("x1" := Constant False `Seq` "x2" := Constant True))
+              (Else (If "x2" (Then ("x2" := Constant False `Seq` "x0" := Constant True)) (Else Skip)))))
