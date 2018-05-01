@@ -152,7 +152,7 @@ instance Num Lin where
 
   negate (Lin a b) = Lin (negate a) (negate b)
 
-  Lin 0 0 * _ = Lin 0 0 -- short circuiting; important for performance
+  Lin 0 0 * _ = Lin 0 0 -- short circuiting; important to avoid infinite recursion
   Lin a b * Lin c d
     | b * d == 0 = Lin (a * c) (a * d + b * c)
     | otherwise = error "quadratic"
