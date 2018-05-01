@@ -166,7 +166,10 @@ denStmt (x :~ Bernoulli theta) sigma' sigma
   | sigma' == M.insert x False sigma = 1 - theta
   | otherwise = 0
 denStmt (Seq s1 s2) sigma' sigma =
-  sumOverAllPossibleStates (M.keysSet sigma) $ \sigma'' -> denStmt s1 sigma'' sigma * denStmt s2 sigma' sigma''
+  sumOverAllPossibleStates (M.keysSet sigma) $ \sigma'' ->
+  case denStmt s1 sigma'' sigma of
+    0 -> 0 -- short circuit the common case
+    r -> r * denStmt s2 sigma' sigma''
 denStmt (If e (Then s1) (Else s2)) sigma' sigma
   | denExpr e sigma = denStmt s1 sigma' sigma
   | otherwise = denStmt s2 sigma' sigma
