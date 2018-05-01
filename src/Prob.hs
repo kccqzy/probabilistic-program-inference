@@ -153,7 +153,6 @@ instance Num Lin where
   negate (Lin a b) = Lin (negate a) (negate b)
 
   Lin 0 0 * _ = Lin 0 0 -- short circuiting; important for performance
-  _ * Lin 0 0 = Lin 0 0 -- short circuiting; important for performance
   Lin a b * Lin c d
     | b * d == 0 = Lin (a * c) (a * d + b * c)
     | otherwise = error "quadratic"
@@ -227,11 +226,6 @@ ratToLin a = Lin a 0
 linToRat :: Lin -> Rational
 linToRat (Lin a 0) = a
 linToRat _ = error "contains variables"
-
-unrollWhile :: Expr varTy -> Stmt varTy -> Int -> Stmt varTy
-unrollWhile e s = unroll
-  where unroll 0 = Observe (Constant False)
-        unroll n = If e (Then (s `Seq` unrollWhile e s (n - 1))) (Else Skip)
 
 findDenProg :: (Foldable t, Ord vt) => t vt -> (Set.Set vt -> ProgState' vt -> r) -> r
 findDenProg p g = g vars initialState
