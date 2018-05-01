@@ -265,11 +265,10 @@ progDice =
   Observe (Not "bit 0" `Or` Not "bit 1" `Or` Not "bit 2")
   )
 
-progGeo :: Prog (M.Map String Bool) String
-progGeo = ReturnAll (
-  "b" := Constant True `Seq`
-  While "b" (
-      "b" :~ Bernoulli 0.5 `Seq`
-      "parity" := Not "parity"
-            )
-                    )
+progGeo :: Prog Bool String
+progGeo =
+  ("b" := Constant True `Seq`
+   "p" := Constant False `Seq`
+   While "b" ("b" :~ Bernoulli 0.5 `Seq`
+              "parity" := Not "parity"))
+  `Return` "p"
