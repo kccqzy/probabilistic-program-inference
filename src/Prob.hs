@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -169,8 +170,19 @@ denStmt (Seq s1 s2) sigma' sigma =
 denStmt (If e (Then s1) (Else s2)) sigma' sigma
   | denExpr e sigma = denStmt s1 sigma' sigma
   | otherwise = denStmt s2 sigma' sigma
-denStmt (While _ _) _ _ = undefined -- XXX
-denStmt (Observe _) _ _ = error "not allowed to call observe in the middle of a program"
+denStmt (Observe e) sigma' sigma -- requires renormalization at the end
+  | sigma' == sigma && denExpr e sigma = 1
+  | otherwise = 0
+denStmt (While e s) sigma' sigma =
+  lim $ \n -> denStmt (unrollWhile e s n) sigma' sigma
+
+lim :: (Int -> Rational) -> Rational
+lim f = f 3
+
+unrollWhile :: Expr varTy -> Stmt varTy -> Int -> Stmt varTy
+unrollWhile e s = unroll
+  where unroll 0 = Observe (Constant False)
+        unroll n = If e (Then (s `Seq` unrollWhile e s (n - 1))) (Else Skip)
 
 findDenProg :: (Foldable t, Ord vt) => t vt -> (Set.Set vt -> ProgState' vt -> r) -> r
 findDenProg p g = g vars initialState
@@ -180,16 +192,8 @@ findDenProg p g = g vars initialState
                    -- initial state: all variables initialized to False
 
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
-denProg p@((s `Seq` Observe e1) `Return` e2) =
-  findDenProg p $ \vars initialState ->
-    let probReturnTrue =
-          sumOverAllPossibleStates vars (\sigma -> if denExpr (e1 `And` e2) sigma then denStmt s sigma initialState else 0)
-          /
-          sumOverAllPossibleStates vars (\sigma -> if denExpr e1 sigma then denStmt s sigma initialState else 0)
-    in [(False, 1 - probReturnTrue), (True, probReturnTrue)]
-
 denProg p@(s `Return` e) =
-  findDenProg p $ \vars initialState ->
+  renormalize $ findDenProg p $ \vars initialState ->
   let
     probReturnTrue =
       sumOverAllPossibleStates vars $ \sigma ->
@@ -198,11 +202,8 @@ denProg p@(s `Return` e) =
           else 0
   in [(False, 1 - probReturnTrue), (True, probReturnTrue)]
 
-denProg (ReturnAll (s `Seq` Observe e)) =
-  renormalize $ filter (\(sigma, _) -> denExpr e sigma) $ denProg (ReturnAll s)
-
 denProg (ReturnAll s) =
-  findDenProg s $ \vars initialState ->
+  renormalize $ findDenProg s $ \vars initialState ->
     map (\endingState -> (endingState, denStmt s endingState initialState)) (allPossibleStates vars)
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]
@@ -260,3 +261,12 @@ progDice =
   -- not all ones
   Observe (Not "bit 0" `Or` Not "bit 1" `Or` Not "bit 2")
   )
+
+progGeo :: Prog (M.Map String Bool) String
+progGeo = ReturnAll (
+  "b" := Constant True `Seq`
+  While "b" (
+      "b" :~ Bernoulli 0.5 `Seq`
+      "parity" := Not "parity"
+            )
+                    )
