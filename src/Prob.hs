@@ -201,21 +201,18 @@ denStmt cl (If e (Then s1) (Else s2)) sigma' sigma
 denStmt _ (Observe e) sigma' sigma -- requires renormalization at the end
   | sigma' == sigma && denExpr e sigma = 1
   | otherwise = 0
-denStmt Nothing loop@(While e s) sigma' sigma
-  | denExpr e sigma' = 0 -- performance
-  | otherwise =
-    solveLin $ denStmt (Just (CurrentLoop e s sigma' sigma)) (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
-denStmt cl@(Just CurrentLoop {..}) loop@(While e s) sigma' sigma
-  | denExpr e sigma' = 0 -- performance
-  | clGuard == e && clBody == s
-    -- same loop
-   =
-    if clSigma' == sigma' && clSigma == sigma
-      then Lin 0 1
-      else denStmt cl (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
-  | otherwise
-    -- nested loop
-   = denStmt Nothing loop sigma' sigma
+denStmt cl loop@(While e s) sigma' sigma =
+  case cl of
+    Just CurrentLoop {..}
+      | clGuard == e && clBody == s ->
+        if clSigma' == sigma' && clSigma == sigma
+          then Lin 0 1
+          else unrollOnce cl
+    _ -> solveLin $ unrollOnce (Just (CurrentLoop e s sigma' sigma))
+  where
+    unrollOnce nl
+      | denExpr e sigma' = 0
+      | otherwise = denStmt nl (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
 
 solveLin :: Lin -> Lin
 solveLin (Lin a b) = Lin (a / (1 - b)) 0
