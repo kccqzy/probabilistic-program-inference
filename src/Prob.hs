@@ -176,7 +176,6 @@ denExpr (Not a) sigma = not (denExpr a sigma)
 data CurrentLoop vt = CurrentLoop
   { clGuard :: Expr vt
   , clBody :: Stmt vt
-  , clSigma' :: Sigma vt
   , clSigma :: Sigma vt
   } deriving (Show)
 
@@ -204,10 +203,10 @@ denStmt cl loop@(While e s) sigma' sigma =
   case cl of
     Just CurrentLoop {..}
       | clGuard == e && clBody == s ->
-        if clSigma' == sigma' && clSigma == sigma
+        if clSigma == sigma
           then Lin 0 1
           else unrollOnce cl
-    _ -> solveLin $ unrollOnce (Just (CurrentLoop e s sigma' sigma))
+    _ -> solveLin $ unrollOnce (Just (CurrentLoop e s sigma))
   where
     unrollOnce nl
       | denExpr e sigma' = 0
