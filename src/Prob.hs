@@ -44,7 +44,7 @@ infixr 3 `Or`
 
 infix 2 :~
 
-infixl 1 `Seq`
+infixr 1 `Seq`
 
 infix 0 `Return`
 
