@@ -141,19 +141,26 @@ evalProg (ReturnAll stmt) = evalStmt stmt >> gets fst
 -- | Sigma is just the set of all variables assignments.
 type Sigma vt = M.Map vt Bool
 
--- | A linear polynomial of the form a+bx.
-data Lin = Lin Rational Rational deriving (Show)
+-- | A linear polynomial of the form a+bx. The variable is represented by Sigma.
+data Lin vt = Lin Rational Rational (Maybe (Sigma vt)) deriving (Show)
 
-instance Num Lin where
-  fromInteger x = Lin (fromInteger x) 0
+instance Eq vt => Num (Lin vt) where
+  fromInteger x = Lin (fromInteger x) 0 Nothing
 
-  Lin a1 b1 + Lin a2 b2 = Lin (a1+a2) (b1+b2)
+  Lin a1 b1 x + Lin a2 _ Nothing = Lin (a1 + a2) b1 x
+  Lin a1 _ Nothing + Lin a2 b2 x = Lin (a1 + a2) b2 x
+  Lin a1 b1 x1 + Lin a2 b2 x2
+    | x1 == x2 = Lin (a1 + a2) (b1 + b2) x1
+    | otherwise = error "adding two Lin with different variables"
 
-  negate (Lin a b) = Lin (negate a) (negate b)
+  negate (Lin a b x) = Lin (negate a) (negate b) x
 
-  Lin 0 0 * _ = Lin 0 0 -- short circuiting; important to avoid infinite recursion
-  Lin a b * Lin c d
-    | b * d == 0 = Lin (a * c) (a * d + b * c)
+  Lin 0 0 _ * _ = Lin 0 0 Nothing -- short circuiting; important to avoid infinite recursion
+  Lin a _ Nothing * Lin c d y = Lin (a * c) (a * d) y
+  Lin a b x * Lin c _ Nothing = Lin (a * c) (b * c) x
+  Lin a b x * Lin c d y
+    | x /= y = error "different vars"
+    | b * d == 0 = Lin (a * c) (a * d + b * c) (x <|> y)
     | otherwise = error "quadratic"
 
   abs = error "unsupported operation: abs"
@@ -176,10 +183,10 @@ denExpr (Not a) sigma = not (denExpr a sigma)
 data CurrentLoop vt = CurrentLoop
   { clGuard :: Expr vt
   , clBody :: Stmt vt
-  , clSigma :: Sigma vt
+  , clSeenSigma :: Set.Set (Sigma vt)
   } deriving (Show)
 
-denStmt :: (Show vt, Ord vt) => Maybe (CurrentLoop vt) -> Stmt vt -> Sigma vt -> Sigma vt -> Lin
+denStmt :: (Show vt, Ord vt) => Maybe (CurrentLoop vt) -> Stmt vt -> Sigma vt -> Sigma vt -> Lin vt
 denStmt _ Skip sigma' sigma
   | sigma' == sigma = 1
   | otherwise = 0
@@ -203,23 +210,25 @@ denStmt cl loop@(While e s) sigma' sigma =
   case cl of
     Just CurrentLoop {..}
       | clGuard == e && clBody == s ->
-        if clSigma == sigma
-          then Lin 0 1
-          else unrollOnce cl
-    _ -> solveLin $ unrollOnce (Just (CurrentLoop e s sigma))
+        if sigma `Set.member` clSeenSigma
+          then Lin 0 1 (Just sigma)
+          else trySolveLin sigma $ unrollOnce (Just (CurrentLoop e s (Set.insert sigma clSeenSigma)))
+    _ -> trySolveLin sigma $ unrollOnce (Just (CurrentLoop e s (Set.singleton sigma)))
   where
     unrollOnce nl
       | denExpr e sigma' = 0
       | otherwise = denStmt nl (If e (Then (s `Seq` loop)) (Else Skip)) sigma' sigma
 
-solveLin :: Lin -> Lin
-solveLin (Lin a b) = Lin (a / (1 - b)) 0
+trySolveLin :: (Eq vt) => Sigma vt -> Lin vt -> Lin vt
+trySolveLin sigma (Lin a b (Just sigma2))
+  | sigma == sigma2 = Lin (a / (1 - b)) 0 Nothing
+trySolveLin _ r = r
 
-ratToLin :: Rational -> Lin
-ratToLin a = Lin a 0
+ratToLin :: Rational -> Lin vt
+ratToLin a = Lin a 0 Nothing
 
-linToRat :: Lin -> Rational
-linToRat (Lin a 0) = a
+linToRat :: Lin vt -> Rational
+linToRat (Lin a 0 Nothing) = a
 linToRat _ = error "contains variables"
 
 findDenProg :: (Foldable t, Ord vt) => t vt -> (Set.Set vt -> Sigma vt -> r) -> r
