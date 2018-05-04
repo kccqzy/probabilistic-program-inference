@@ -332,3 +332,9 @@ progGeo3 =
                (Then ["x1" := Constant False, "x2" := Constant True])
                (Else [If "x2" (Then ["x2" := Constant False, "x1" := Constant True]) (Else [])])
            ])
+
+infini :: Prog (M.Map String Bool) String
+infini = ReturnAll [While (Constant True) []]
+
+progGeoFlipInside :: Prog Bool String
+progGeoFlipInside = ["b" := Constant True, While "b" ["b" :~ Bernoulli 0.5, "p" :~ Bernoulli 0.5]] `Return` "p"
