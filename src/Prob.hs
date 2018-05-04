@@ -55,8 +55,7 @@ newtype Else varTy =
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 data Stmt varTy
-  = Skip
-  | varTy := (Expr varTy)
+  = varTy := (Expr varTy)
   | varTy :~ Dist
   | Observe (Expr varTy)
   | If (Expr varTy)
@@ -105,7 +104,6 @@ drawDist (Bernoulli p) = do
 
 evalStmt :: (Show vt, Ord vt) => [Stmt vt] -> Eval vt s ()
 evalStmt [] = pure ()
-evalStmt (Skip:next) = evalStmt next
 evalStmt ((x := a):next) = do
   v <- evalExpr a
   modify (first (M.insert x v))
@@ -187,7 +185,6 @@ denStmt :: (Show vt, Ord vt) => Maybe (CurrentLoop vt) -> [Stmt vt] -> Sigma vt 
 denStmt _ [] sigma' sigma
   | sigma' == sigma = 1
   | otherwise = 0
-denStmt cl (Skip:next) sigma' sigma = denStmt cl next sigma' sigma
 denStmt cl ((x := e):next) sigma' sigma = denStmt cl next sigma' (M.insert x (denExpr e sigma) sigma)
 denStmt cl ((x :~ Bernoulli theta):next) sigma' sigma =
   ratToLin theta * denStmt cl next sigma' (M.insert x True sigma) +
@@ -207,7 +204,7 @@ denStmt cl (loop@(While e s):next) sigma' sigma =
           else trySolveLin sigma $ unrollOnce (Just (CurrentLoop e s (Set.insert sigma clSeenSigma)))
     _ -> trySolveLin sigma $ unrollOnce (Just (CurrentLoop e s (Set.singleton sigma)))
   where
-    unrollOnce nl = denStmt nl (If e (Then (s ++ [loop])) (Else [Skip]) : next) sigma' sigma
+    unrollOnce nl = denStmt nl (If e (Then (s ++ [loop])) (Else []) : next) sigma' sigma
 
 trySolveLin :: (Eq vt) => Sigma vt -> Lin vt -> Lin vt
 trySolveLin sigma (Lin a b (Just sigma2))
@@ -312,7 +309,7 @@ progGeo2 =
            [ If
                "x1"
                (Then ["x1" := Constant False, "x2" := Constant True])
-               (Else [If "x2" (Then ["x2" := Constant False, "x0" := Constant True]) (Else [Skip])])
+               (Else [If "x2" (Then ["x2" := Constant False, "x0" := Constant True]) (Else [])])
            ])
 
 progGeo3 :: Prog (M.Map String Bool) String
@@ -333,5 +330,5 @@ progGeo3 =
            [ If
                "x1"
                (Then ["x1" := Constant False, "x2" := Constant True])
-               (Else [If "x2" (Then ["x2" := Constant False, "x1" := Constant True]) (Else [Skip])])
+               (Else [If "x2" (Then ["x2" := Constant False, "x1" := Constant True]) (Else [])])
            ])
