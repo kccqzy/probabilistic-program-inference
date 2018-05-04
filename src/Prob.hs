@@ -241,15 +241,11 @@ findDenProg p g = g vars initialState
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
 denProg p@(s `Return` e) =
   renormalize $
-  nonzeroes $
+  M.toList $
+  M.fromListWith (+) $
   (fmap . fmap) linToRat $
   findDenProg p $ \vars initialState ->
-    let probReturnTrue =
-          sumOverAllPossibleStates vars $ \sigma ->
-            if denExpr e sigma
-              then denStmt Nothing s sigma initialState
-              else 0
-    in [(False, 1 - probReturnTrue), (True, probReturnTrue)]
+    map (\endingState -> (denExpr e endingState, denStmt Nothing s endingState initialState)) (allPossibleStates vars)
 
 denProg (ReturnAll s) =
   renormalize $
