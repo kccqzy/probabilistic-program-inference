@@ -104,6 +104,7 @@ extractRHS _ = error "extractRHS: contains unsolved variables"
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
 denProg p@(s `Return` e) =
   renormalize $
+  nonzeroes $
   M.toList $
   M.fromListWith (+) $
   findDenProg p $ \vars initialState ->
