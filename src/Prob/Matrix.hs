@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE StrictData #-}
 -- | Matrices as star semirings
 module Prob.Matrix where
@@ -11,7 +12,12 @@ data Compact a
   | Inf
 
 -- | A matrix, which is an array of array of elements, indexed by i.
-newtype Matrix i e = Matrix (Array i (Array i e))
+newtype Matrix i e = Matrix (Array i (Array i e)) deriving Functor
+
+newtype Vector i e = Vector (Array i e) deriving Functor
+
+vectorFromFunc :: (Ix i, Bounded i) => (i -> e) -> Vector i e
+vectorFromFunc f = Vector $ listArray (minBound, maxBound) $ map f entireRange
 
 matrixFromFunc :: (Ix i, Bounded i) => ((i, i) -> e) -> Matrix i e
 matrixFromFunc f =
@@ -19,8 +25,16 @@ matrixFromFunc f =
   listArray (minBound, maxBound) $
   map (\i -> listArray (minBound, maxBound) $ map (\j -> f (i, j)) entireRange) entireRange
 
+mult :: (Ix i, Bounded i, StarSemiring e) => Matrix i e -> Vector i e -> Vector i e
+mult (Matrix a) (Vector b) = vectorFromFunc $ \i -> (a!i) `dot` b
+  where dot u v = srsum (zipWith (<.>) (elems u) (elems v))
+
 inverse :: (Eq a, Ix i, Bounded i, Fractional a) => Matrix i a -> Matrix i (Compact a)
 inverse m = star (one <+> fmap (Real . negate) m)
+
+-- Solve the equation x=ax+b
+solveAffine :: (Eq a, Ix i, Bounded i, Fractional a) => Matrix i a -> Vector i a -> Vector i (Compact a)
+solveAffine a b = star (fmap Real a) `mult` fmap Real b
 
 entireRange :: (Ix i, Bounded i) => [i]
 entireRange = range (minBound, maxBound)
@@ -46,6 +60,9 @@ class StarSemiring a where
   one :: a
   (<.>) :: a -> a -> a
   star :: a -> a
+
+srsum :: StarSemiring a => [a] -> a
+srsum = foldr (<+>) zero
 
 instance (Eq a, Num a, Fractional a) => StarSemiring (Compact a) where
   zero = Real 0
@@ -73,15 +90,12 @@ instance (Ix i, Bounded i, StarSemiring a) => StarSemiring (Matrix i a) where
            else zero)
   Matrix x <.> Matrix y = matrixFromFunc build -- matrix multiplication
     where
-      build (i, j) = foldr (<+>) zero [x ! i ! k <.> y ! k ! j | k <- entireRange]
+      build (i, j) = srsum [x ! i ! k <.> y ! k ! j | k <- entireRange]
   star x = one <+> foldr f x entireRange -- matrix asteration
     where
       f k (Matrix m) = matrixFromFunc build
         where
           build (i, j) = m ! i ! j <+> m ! i ! k <.> star (m ! k ! k) <.> m ! k ! j
-
-instance (Ix i) => Functor (Matrix i) where
-  fmap f (Matrix m) = Matrix ((fmap . fmap) f m)
 
 instance (Ix i, Bounded i) => Applicative (Matrix i) where
   pure x = matrixFromFunc (const x)
