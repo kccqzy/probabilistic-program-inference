@@ -5,8 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StrictData #-}
 module Prob.LinearEq
-  ( Var(..)
-  , Term(..)
+  ( Term(..)
   , Equation(..)
   , solve
   ) where
@@ -21,14 +20,11 @@ import Data.Reflection
 import qualified Data.Set as Set
 import Prob.Matrix
 
--- | Some variable.
-newtype Var x = Var x deriving (Eq, Ord, Functor, Foldable, Traversable)
-
 -- | A term is a rational multiplied by a variable.
-data Term x = Term Rational (Var x) deriving (Functor, Foldable, Traversable)
+data Term x = Term Rational x deriving (Functor, Foldable, Traversable)
 
 -- | An equation has the form var = constant + term1 + term2 + ...
-data Equation x = Equation (Var x) Rational [Term x] deriving (Functor, Foldable, Traversable)
+data Equation x = Equation x Rational [Term x] deriving (Functor, Foldable, Traversable)
 
 -- | A system is a bunch of equations, each of the form var = constant + term1 + term2 + ...
 type System x = [Equation x]
@@ -65,10 +61,10 @@ solve eqns = reify (Bounds 0 (Set.size vars - 1)) f
         b :: Vector (BoundedW Int s) Rational
         b =
           vectorFromFunc $ \(BoundedW i) ->
-          getSum $ foldMap (\(Equation _ c _) -> Sum c) (filter (\(Equation (Var i') _ _) -> i == i') reindexedEqns)
+          getSum $ foldMap (\(Equation _ c _) -> Sum c) (filter (\(Equation i' _ _) -> i == i') reindexedEqns)
         a :: Matrix (BoundedW Int s) Rational
         a =
           matrixFromFunc $ \(BoundedW i, BoundedW j) ->
-          case head (filter (\(Equation (Var i') _ _) -> i == i') reindexedEqns) of
+          case head (filter (\(Equation i' _ _) -> i == i') reindexedEqns) of
             Equation _ _ tms ->
-              getSum $ foldMap (\(Term c _) -> Sum c) (filter (\(Term _ (Var j')) -> j == j') tms)
+              getSum $ foldMap (\(Term c _) -> Sum c) (filter (\(Term _ j') -> j == j') tms)
