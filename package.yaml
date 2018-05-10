@@ -13,6 +13,7 @@ dependencies:
 - transformers
 - errors
 - containers
+- array
 
 library:
   source-dirs: src
