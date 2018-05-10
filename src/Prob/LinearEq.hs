@@ -7,7 +7,9 @@
 {-# LANGUAGE StrictData #-}
 module Prob.LinearEq
   ( Term(..)
+  , RHS(..)
   , Equation(..)
+  , System
   , solve
   ) where
 
@@ -21,10 +23,12 @@ import qualified Data.Set as Set
 import Prob.Matrix
 
 -- | A term is a rational multiplied by a variable.
-data Term x = Term Rational x deriving (Functor, Foldable, Traversable)
+data Term x = Term Rational x deriving (Show, Functor, Foldable, Traversable)
 
 -- | An equation has the form var = constant + term1 + term2 + ...
-data Equation x = Equation x Rational [Term x] deriving (Functor, Foldable, Traversable)
+data Equation x = Equation x (RHS x) deriving (Show, Functor, Foldable, Traversable)
+
+data RHS x = RHS Rational [Term x] deriving (Show, Functor, Foldable, Traversable)
 
 -- | A system is a bunch of equations, each of the form var = constant + term1 + term2 + ...
 type System x = [Equation x]
@@ -63,9 +67,10 @@ solve eqns = reify (Bounds 0 (Set.size vars - 1)) f
         b :: Vector (BoundedW Int s) Rational
         b =
           vectorFromFunc $ \(BoundedW i) ->
-            getSum $ foldMap (\(Equation _ c _) -> Sum c) (filter (\(Equation i' _ _) -> i == i') reindexedEqns)
+            getSum $ foldMap (\(Equation _ (RHS c _)) -> Sum c) (filter (\(Equation i' _) -> i == i') reindexedEqns)
         a :: Matrix (BoundedW Int s) Rational
         a =
           matrixFromFunc $ \(BoundedW i, BoundedW j) ->
-            case head (filter (\(Equation i' _ _) -> i == i') reindexedEqns) of
-              Equation _ _ tms -> getSum $ foldMap (\(Term c _) -> Sum c) (filter (\(Term _ j') -> j == j') tms)
+            case filter (\(Equation i' _) -> i == i') reindexedEqns of
+              (Equation _ (RHS _ tms):_) -> getSum $ foldMap (\(Term c _) -> Sum c) (filter (\(Term _ j') -> j == j') tms)
+              [] -> error $ "no such equation when trying to construct coefficient matrix for system " ++ show reindexedEqns

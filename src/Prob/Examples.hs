@@ -77,7 +77,7 @@ progGeo3 =
            ])
 
 infini :: Prog (M.Map String Bool) String
-infini = ReturnAll [While (Constant True) []]
+infini = ReturnAll ["b" := Constant True, While (Constant True) []]
 
-progGeoFlipInside :: Prog Bool String
-progGeoFlipInside = ["b" := Constant True, While "b" ["b" :~ Bernoulli 0.5, "p" :~ Bernoulli 0.5]] `Return` "p"
+progGeoFlipInside :: Prog (M.Map String Bool) String
+progGeoFlipInside = ReturnAll ["b" := Constant True, While "b" ["b" :~ Bernoulli 0.5, "p" :~ Bernoulli 0.5]]

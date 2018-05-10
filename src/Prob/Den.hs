@@ -1,44 +1,22 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StrictData #-}
 module Prob.Den (denExpr, denStmt, denProg)where
 
-import Control.Applicative
 import Control.Error
+import Control.Monad.State
 import Data.Bifunctor
 import Data.Foldable
 import qualified Data.Map.Strict as M
+import Data.Maybe
 import qualified Data.Set as Set
 import Prob.CoreAST
+import qualified Prob.LinearEq as L
+
 --------------------------------------------------------------------------------
 -- Denotational Semantics
 --------------------------------------------------------------------------------
-
--- | A linear polynomial of the form a+bx. The variable is represented by Sigma.
-data Lin vt = Lin Rational Rational (Maybe (Sigma vt)) deriving (Show)
-
-instance Eq vt => Num (Lin vt) where
-  fromInteger x = Lin (fromInteger x) 0 Nothing
-
-  Lin a1 b1 x + Lin a2 _ Nothing = Lin (a1 + a2) b1 x
-  Lin a1 _ Nothing + Lin a2 b2 x = Lin (a1 + a2) b2 x
-  Lin a1 b1 x1 + Lin a2 b2 x2
-    | x1 == x2 = Lin (a1 + a2) (b1 + b2) x1
-    | otherwise = error "adding two Lin with different variables"
-
-  negate (Lin a b x) = Lin (negate a) (negate b) x
-
-  Lin 0 0 _ * _ = Lin 0 0 Nothing -- short circuiting; important to avoid infinite recursion
-  Lin a _ Nothing * Lin c d y = Lin (a * c) (a * d) y
-  Lin a b x * Lin c _ Nothing = Lin (a * c) (b * c) x
-  Lin a b x * Lin c d y
-    | x /= y = error "different vars"
-    | b * d == 0 = Lin (a * c) (a * d + b * c) (x <|> y)
-    | otherwise = error "quadratic"
-
-  abs = error "unsupported operation: abs"
-  signum = error "unsupported operation: signum"
-
 
 allPossibleStates :: (Ord k, Foldable t) => t k -> [M.Map k Bool]
 allPossibleStates = foldr (\var -> concatMap (\st -> [M.insert var True st, M.insert var False st])) [M.empty]
@@ -54,44 +32,63 @@ data CurrentLoop vt = CurrentLoop
   { clGuard :: Expr vt
   , clBody :: [Stmt vt]
   , clSeenSigma :: Set.Set (Sigma vt)
+  , clEqns :: L.System (Sigma vt)
   } deriving (Show)
 
-denStmt :: (Show vt, Ord vt) => Maybe (CurrentLoop vt) -> [Stmt vt] -> Sigma vt -> Sigma vt -> Lin vt
-denStmt _ [] sigma' sigma
-  | sigma' == sigma = 1
-  | otherwise = 0
-denStmt cl ((x := e):next) sigma' sigma = denStmt cl next sigma' (M.insert x (denExpr e sigma) sigma)
-denStmt cl ((x :~ Bernoulli theta):next) sigma' sigma =
-  ratToLin theta * denStmt cl next sigma' (M.insert x True sigma) +
-  ratToLin (1 - theta) * denStmt cl next sigma' (M.insert x False sigma)
-denStmt cl (If e (Then s1) (Else s2):next) sigma' sigma
-  | denExpr e sigma = denStmt cl (s1 ++ next) sigma' sigma
-  | otherwise = denStmt cl (s2 ++ next) sigma' sigma
-denStmt cl (Observe e:next) sigma' sigma -- requires renormalization at the end
-  | denExpr e sigma = denStmt cl next sigma' sigma
-  | otherwise = 0
-denStmt cl (loop@(While e s):next) sigma' sigma =
+type Den vt = State (Maybe (CurrentLoop vt))
+
+denStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Sigma vt -> Den vt (L.RHS (Sigma vt))
+denStmt [] sigma' sigma
+  | sigma' == sigma = pure (L.RHS 1 [])
+  | otherwise = pure (L.RHS 0 [])
+denStmt ((x := e):next) sigma' sigma = denStmt next sigma' (M.insert x (denExpr e sigma) sigma)
+denStmt ((x :~ Bernoulli theta):next) sigma' sigma = do
+  dTrue <- denStmt next sigma' (M.insert x True sigma)
+  dFalse <- denStmt next sigma' (M.insert x False sigma)
+  pure ((theta `mult` dTrue) `plus` ((1 - theta) `mult` dFalse))
+  where mult :: Rational -> L.RHS x -> L.RHS x
+        mult k (L.RHS c tms) = L.RHS (k * c) (map (\(L.Term b y) -> L.Term (k*b) y) tms)
+        plus :: L.RHS x -> L.RHS x -> L.RHS x
+        plus (L.RHS c1 t1) (L.RHS c2 t2) = L.RHS (c1 + c2) (t1++t2)
+denStmt (If e (Then s1) (Else s2):next) sigma' sigma
+  | denExpr e sigma = denStmt (s1 ++ next) sigma' sigma
+  | otherwise = denStmt (s2 ++ next) sigma' sigma
+denStmt (Observe e:next) sigma' sigma -- requires renormalization at the end
+  | denExpr e sigma = denStmt next sigma' sigma
+  | otherwise = pure (L.RHS 0 [])
+denStmt (loop@(While e s):next) sigma' sigma = do
+  cl <- get
   case cl of
     Just CurrentLoop {..}
-      | clGuard == e && clBody == s ->
-        if sigma `Set.member` clSeenSigma
-          then Lin 0 1 (Just sigma)
-          else trySolveLin sigma $ unrollOnce (Just (CurrentLoop e s (Set.insert sigma clSeenSigma)))
-    _ -> trySolveLin sigma $ unrollOnce (Just (CurrentLoop e s (Set.singleton sigma)))
+      | clGuard == e && clBody == s -> do
+        when (sigma `Set.notMember` clSeenSigma) $ do
+          let clSeenSigma' = Set.insert sigma clSeenSigma
+          put (Just (CurrentLoop clGuard clBody clSeenSigma' clEqns))
+          r <- unrollOnce
+          addEqn (L.Equation sigma r)
+        pure $ L.RHS 0 [L.Term 1 sigma]
+    _ -> do
+      put (Just (CurrentLoop e s (Set.singleton sigma) []))
+      r <- unrollOnce
+      addEqn (L.Equation sigma r)
+      newEqns <- gets (clEqns . fromJust)
+      case L.solve newEqns of
+        Nothing -> error "solution of linear system involves infinity: matrix is not of full rank"
+        Just m -> do
+          let v = fromJust $ M.lookup sigma m
+          put cl
+          pure (L.RHS v [])
   where
-    unrollOnce nl = denStmt nl (If e (Then (s ++ [loop])) (Else []) : next) sigma' sigma
+    unrollOnce = denStmt (If e (Then (s ++ [loop])) (Else []) : next) sigma' sigma
+    addEqn eqn =
+      modify
+        (\st ->
+           case st of
+             Nothing -> Nothing
+             Just CurrentLoop {..} -> Just (CurrentLoop clGuard clBody clSeenSigma (eqn : clEqns)))
 
-trySolveLin :: (Eq vt) => Sigma vt -> Lin vt -> Lin vt
-trySolveLin sigma (Lin a b (Just sigma2))
-  | sigma == sigma2 = Lin (a / (1 - b)) 0 Nothing
-trySolveLin _ r = r
-
-ratToLin :: Rational -> Lin vt
-ratToLin a = Lin a 0 Nothing
-
-linToRat :: Lin vt -> Rational
-linToRat (Lin a 0 Nothing) = a
-linToRat _ = error "contains variables"
+runDenStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Sigma vt -> Rational
+runDenStmt stmts sigma' sigma = extractRHS $ evalState (denStmt stmts sigma' sigma) Nothing
 
 findDenProg :: (Foldable t, Ord vt) => t vt -> (Set.Set vt -> Sigma vt -> r) -> r
 findDenProg p g = g vars initialState
@@ -100,21 +97,23 @@ findDenProg p g = g vars initialState
     initialState = M.fromSet (const False) vars
                    -- initial state: all variables initialized to False
 
+extractRHS :: L.RHS vt -> Rational
+extractRHS (L.RHS c []) = c
+extractRHS _ = error "extractRHS: contains unsolved variables"
+
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
 denProg p@(s `Return` e) =
   renormalize $
   M.toList $
   M.fromListWith (+) $
-  (fmap . fmap) linToRat $
   findDenProg p $ \vars initialState ->
-    map (\endingState -> (denExpr e endingState, denStmt Nothing s endingState initialState)) (allPossibleStates vars)
+    map (\endingState -> (denExpr e endingState, runDenStmt s endingState initialState)) (allPossibleStates vars)
 
 denProg p@(ReturnAll s) =
   renormalize $
   nonzeroes $
-  (fmap . fmap) linToRat $
   findDenProg p $ \vars initialState ->
-    map (\endingState -> (endingState, denStmt Nothing s endingState initialState)) (allPossibleStates vars)
+    map (\endingState -> (endingState, runDenStmt s endingState initialState)) (allPossibleStates vars)
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]
 renormalize l = map (second (/tot)) l
