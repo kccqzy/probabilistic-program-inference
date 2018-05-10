@@ -76,8 +76,32 @@ progGeo3 =
                (Else [If "x2" (Then ["x2" := Constant False, "x1" := Constant True]) (Else [])])
            ])
 
-infini :: Prog (M.Map String Bool) String
-infini = ReturnAll ["b" := Constant True, While (Constant True) []]
+progGeo2ExtraFlip :: Prog (M.Map String Bool) String
+progGeo2ExtraFlip =
+  ReturnAll
+    [ "b" := Constant True
+    , "x0" := Constant True
+    , "x1" := Constant False
+    , "x2" := Constant False
+    , While "b" ["b" :~ Bernoulli 0.5, next, "bogus" :~ Bernoulli 0.5]
+    ]
+  where
+    next =
+      If
+        "x0"
+        (Then ["x0" := Constant False, "x1" := Constant True])
+        (Else
+           [ If
+               "x1"
+               (Then ["x1" := Constant False, "x2" := Constant True])
+               (Else [If "x2" (Then ["x2" := Constant False, "x0" := Constant True]) (Else [])])
+           ])
+
+infini :: Prog Bool String
+infini = ["b" := Constant True, While (Constant True) []] `Return` "b"
+
+infiniFlip :: Prog Bool String
+infiniFlip = ["b" := Constant True, While (Constant True) ["b" := Not "b"]] `Return` "b"
 
 progGeoFlipInside :: Prog (M.Map String Bool) String
 progGeoFlipInside = ReturnAll ["b" := Constant True, While "b" ["b" :~ Bernoulli 0.5, "p" :~ Bernoulli 0.5]]
