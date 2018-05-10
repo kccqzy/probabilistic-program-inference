@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -11,7 +12,6 @@ module Prob.LinearEq
   ) where
 
 import Data.Monoid
-import Data.Bifunctor
 import Data.Array
 import Data.Proxy
 import Data.Foldable
@@ -42,7 +42,7 @@ instance (Reifies s (Bounds i)) => Bounded (BoundedW i s) where
 solve ::
      forall x. (Ord x)
   => System x
-  -> M.Map x (Compact Rational)
+  -> Maybe (M.Map x Rational)
 solve eqns = reify (Bounds 0 (Set.size vars - 1)) f
   where
     vars :: Set.Set x
@@ -53,18 +53,19 @@ solve eqns = reify (Bounds 0 (Set.size vars - 1)) f
     indexRMap = M.fromList (zip [0 ..] (Set.toList vars))
     reindexedEqns :: [Equation Int]
     reindexedEqns = (fmap . fmap) (indexMap M.!) eqns
-    f :: forall s. Reifies s (Bounds Int) => Proxy s -> M.Map x (Compact Rational)
-    f _ = M.fromList (map (first ((indexRMap M.!) . unBoundedW)) (assocs x))
+    f :: forall s. Reifies s (Bounds Int)
+      => Proxy s
+      -> Maybe (M.Map x Rational)
+    f _ = M.fromList <$> traverse (\(i, r) -> (indexRMap M.! unBoundedW i, ) <$> extractCompact r) (assocs x)
       where
         x :: Array (BoundedW Int s) (Compact Rational)
         (Vector x) = solveAffine a b
         b :: Vector (BoundedW Int s) Rational
         b =
           vectorFromFunc $ \(BoundedW i) ->
-          getSum $ foldMap (\(Equation _ c _) -> Sum c) (filter (\(Equation i' _ _) -> i == i') reindexedEqns)
+            getSum $ foldMap (\(Equation _ c _) -> Sum c) (filter (\(Equation i' _ _) -> i == i') reindexedEqns)
         a :: Matrix (BoundedW Int s) Rational
         a =
           matrixFromFunc $ \(BoundedW i, BoundedW j) ->
-          case head (filter (\(Equation i' _ _) -> i == i') reindexedEqns) of
-            Equation _ _ tms ->
-              getSum $ foldMap (\(Term c _) -> Sum c) (filter (\(Term _ j') -> j == j') tms)
+            case head (filter (\(Equation i' _ _) -> i == i') reindexedEqns) of
+              Equation _ _ tms -> getSum $ foldMap (\(Term c _) -> Sum c) (filter (\(Term _ j') -> j == j') tms)

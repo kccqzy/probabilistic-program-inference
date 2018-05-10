@@ -11,6 +11,10 @@ data Compact a
   = Real a
   | Inf
 
+extractCompact :: Compact a -> Maybe a
+extractCompact Inf = Nothing
+extractCompact (Real a) = Just a
+
 -- | A matrix, which is an array of array of elements, indexed by i.
 newtype Matrix i e = Matrix (Array i (Array i e)) deriving Functor
 
