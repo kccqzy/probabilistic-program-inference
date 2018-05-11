@@ -1,0 +1,5 @@
+b := true;
+
+while true do {
+  b := not b
+}

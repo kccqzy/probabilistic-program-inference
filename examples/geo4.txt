@@ -1,0 +1,19 @@
+// This is similar to the geo2 example, but with an extra flip inside the body.
+
+b := true;
+x0 := true;
+x1 := false;
+x2 := false;
+
+while b do {
+  b ~ bernoulli 0.5;
+
+  // Perform a transition
+  if x0 then { x0 := false; x1 := true }
+  else if x1 then { x1 := false; x2 := true }
+  else if x2 then { x2 := false; x0 := true }
+  else { /* Not possible */ };
+
+  bogus ~ bernoulli 0.5;
+
+}

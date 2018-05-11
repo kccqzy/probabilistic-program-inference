@@ -100,7 +100,7 @@ observeStmt = do
   pure [Core.Observe e]
 
 stmt :: Parser [Stmt]
-stmt = concat <$> sepBy (ifStmt <|> whileStmt <|> skipStmt <|> observeStmt <|> assignStmt <|> braces stmt) semi
+stmt = concat <$> sepEndBy (ifStmt <|> whileStmt <|> skipStmt <|> observeStmt <|> assignStmt <|> braces stmt) semi
 
 dist :: Parser Core.Dist
 dist = keyword "bernoulli" >> Core.Bernoulli . toRational <$> lexeme L.scientific
@@ -121,7 +121,7 @@ prog :: Parser Prog
 prog = do
   spaces
   s <- stmt
-  r <- optional (keyword "return" >> expr)
+  r <- optional (keyword "return" *> expr <* semi)
   case r of
     Nothing -> pure (Prog (Core.ReturnAll s))
     Just e -> pure (Prog (Core.Return s e))

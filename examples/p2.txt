@@ -1,0 +1,4 @@
+c1 ~ bernoulli 0.5;
+c2 ~ bernoulli 0.5;
+observe c1 or c2;
+return c1 and c2;

@@ -1,0 +1,30 @@
+b := true;
+p := false;
+
+while b do {
+  b ~ bernoulli 0.5;
+  p := not p;
+}
+
+return p;
+
+/* It is obvious that to a human, the probability of $p$ being true at the end
+is the probability that the loop executes odd number of times. This means that
+we need to sum up the probability of the first flip returning false, the first
+two flips returning true and the third flip returning false, the first four
+flips returning true and the fifth flip returning false, etc. This becomes the
+following infinite sum
+
+\[
+  \left( \frac{1}{2} \right)^1 + \left( \frac{1}{2} \right)^3 + \left( \frac{1}{2} \right)^5 + \cdots
+  =
+  \sum_{k=0}^\infty \left( \frac{1}{2} \right)^{2k+1}
+  =
+  \frac{1}{2}\sum_{k=0}^\infty \left( \frac{1}{4} \right)^k
+  =
+  \frac{1}{2}\left( \frac{1}{1- \frac{1}{4} } \right)
+  =
+  \frac{2}{3}
+\]
+
+*/

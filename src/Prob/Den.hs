@@ -138,7 +138,7 @@ denProgPretty p =
     r :: [(String, String)]
     r =
       case p of
-        Return s e -> map (bimap show show) (denProgReturn s e)
+        Return s e -> map (bimap (`shows` " ") show) (denProgReturn s e)
         ReturnAll s -> map (bimap pprMap show) (denProgReturnAll s)
     pprMap :: Sigma vt -> String
     pprMap =

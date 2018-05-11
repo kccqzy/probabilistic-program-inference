@@ -1,0 +1,10 @@
+// We use three bits to represent a dice. Three bits can represent integers from
+// 0 to 7, and we use observe to remove the two impossible ones.
+
+b0 ~ bernoulli 0.5;
+b1 ~ bernoulli 0.5;
+b2 ~ bernoulli 0.5;
+
+// Not all zeroes
+observe b0 || b1 || b2;
+observe !b0 || !b1 || !b2;
