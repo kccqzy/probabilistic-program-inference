@@ -1,11 +1,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StrictData #-}
 module Prob.Den
   ( denExpr
   , denStmt
   , denProg
+  , denProgPretty
   , denProgReturn
   , denProgReturnAll
   ) where
@@ -126,6 +128,33 @@ denProgReturnAll s =
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
 denProg (s `Return` e) = denProgReturn s e
 denProg (ReturnAll s) = denProgReturnAll s
+
+denProgPretty :: forall vt r. (Show vt, Ord vt) => Prog r vt -> ShowS
+denProgPretty p =
+  case r of
+    [] -> showString "No results produced.\n"
+    _ -> bars . foldr (\(col1, col2) s -> showString col1 . showString (replicate (maxLen1 - length col1) ' ') . showString col2 . showChar '\n' . s) id r
+  where
+    r :: [(String, String)]
+    r =
+      case p of
+        Return s e -> map (bimap show show) (denProgReturn s e)
+        ReturnAll s -> map (bimap pprMap show) (denProgReturnAll s)
+    pprMap :: Sigma vt -> String
+    pprMap =
+      M.foldrWithKey
+        (\var val s ->
+           shows var .
+           showString " ->" .
+           showString
+             (if val
+                then "  true "
+                else " false ") $
+           s)
+        " "
+    maxLen1 = maximum (length . fst <$> r)
+    maxLen2 = maximum (length . snd <$> r)
+    bars = showString (replicate (maxLen1 - 1) '-') . showChar ' ' . showString (replicate maxLen2 '-') . showChar '\n'
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]
 renormalize l = map (second (/tot)) l
