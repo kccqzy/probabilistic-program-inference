@@ -44,7 +44,7 @@ semi :: Parser ()
 semi = void (symbol ";")
 
 keywords :: [T.Text]
-keywords = ["if", "then", "else", "while", "do", "skip", "true", "false", "not", "and", "or", "bernoulli", "return", "observe"]
+keywords = ["if", "then", "else", "while", "do", "skip", "true", "false", "not", "and", "or", "xor", "bernoulli", "return", "observe"]
 
 keyword :: T.Text -> Parser ()
 keyword w = (lexeme . try) (string w *> notFollowedBy alphaNumChar)
@@ -111,6 +111,7 @@ expr = makeExprParser terms operators
     operators =
       [ [Prefix (Core.Not <$ keyword "not"), Prefix (Core.Not <$ symbol "!")]
       , [InfixL (Core.And <$ keyword "and"), InfixL (Core.And <$ symbol "&&")]
+      , [InfixL (Core.Xor <$ keyword "xor"), InfixL (Core.Xor <$ symbol "^")]
       , [InfixL (Core.Or <$ keyword "or"), InfixL (Core.Or <$ symbol "||")]
       ]
     terms =

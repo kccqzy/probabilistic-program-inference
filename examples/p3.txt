@@ -1,0 +1,6 @@
+x ~ bernoulli 0.5;
+if x then {
+  y ~ bernoulli 0.5;
+} else {
+  y := x 
+};

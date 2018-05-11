@@ -37,6 +37,7 @@ denExpr (Var x) sigma = fromMaybe (error $ "undefined variable " ++ show x) $ M.
 denExpr (Constant d) _ = d
 denExpr (Or a b) sigma = denExpr a sigma || denExpr b sigma
 denExpr (And a b) sigma = denExpr a sigma && denExpr b sigma
+denExpr (Xor a b) sigma = denExpr a sigma /= denExpr b sigma
 denExpr (Not a) sigma = not (denExpr a sigma)
 
 data CurrentLoop vt = CurrentLoop

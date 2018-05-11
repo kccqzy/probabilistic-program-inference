@@ -38,6 +38,7 @@ evalExpr (Var x) = fromMaybe (error $ "undefined variable " ++ show x) <$> gets 
 evalExpr (Constant d) = pure d
 evalExpr (Or a b) = liftA2 (||) (evalExpr a) (evalExpr b)
 evalExpr (And a b) = liftA2 (&&) (evalExpr a) (evalExpr b)
+evalExpr (Xor a b) = liftA2 (/=) (evalExpr a) (evalExpr b)
 evalExpr (Not a) = not <$> evalExpr a
 
 drawDist :: (Show vt, Ord vt) => Dist -> Eval vt s Bool

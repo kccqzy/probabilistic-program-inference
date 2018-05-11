@@ -24,6 +24,7 @@ data Expr varTy
   | Constant Bool
   | (Expr varTy) `And` (Expr varTy)
   | (Expr varTy) `Or` (Expr varTy)
+  | (Expr varTy) `Xor` (Expr varTy)
   | Not (Expr varTy)
   deriving (Show, Eq, Functor, Foldable, Traversable)
 

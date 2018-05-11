@@ -1,0 +1,38 @@
+// We use three bits to represent a dice. Three bits can represent integers from
+// 0 to 7, and we use observe to remove the two impossible ones.
+
+b0 ~ bernoulli 0.5;
+b1 ~ bernoulli 0.5;
+b2 ~ bernoulli 0.5;
+
+// Not zero or seven.
+observe b0 || b1 || b2;
+observe !b0 || !b1 || !b2;
+
+c0 ~ bernoulli 0.5;
+c1 ~ bernoulli 0.5;
+c2 ~ bernoulli 0.5;
+
+// Not zero or seven.
+observe c0 || c1 || c2;
+observe !c0 || !c1 || !c2;
+
+// Now b and c are two dice. We sum them up.
+
+s0 := b0 xor c0;
+carry := b0 and c0;
+
+s1 := b1 xor c1 xor carry;
+carry := b1 and c1 or carry and (b1 xor c1);
+
+s2 := b2 xor c2 xor carry;
+carry := b2 and c2 or carry and (b2 xor c2);
+
+s3 := carry;
+
+// We observe their sum to be eleven.
+
+observe s0;
+observe s1;
+observe not s2;
+observe s3;
