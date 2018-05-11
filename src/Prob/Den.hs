@@ -2,7 +2,13 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StrictData #-}
-module Prob.Den (denExpr, denStmt, denProg)where
+module Prob.Den
+  ( denExpr
+  , denStmt
+  , denProg
+  , denProgReturn
+  , denProgReturnAll
+  ) where
 
 import Control.Error
 import Control.Monad.State
@@ -90,10 +96,10 @@ denStmt (loop@(While e s):next) sigma' sigma = do
 runDenStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Sigma vt -> Rational
 runDenStmt stmts sigma' sigma = extractRHS $ evalState (denStmt stmts sigma' sigma) Nothing
 
-findDenProg :: (Foldable t, Ord vt) => t vt -> (Set.Set vt -> Sigma vt -> r) -> r
+findDenProg :: (Ord vt) => [vt] -> (Set.Set vt -> Sigma vt -> r) -> r
 findDenProg p g = g vars initialState
   where
-    vars = Set.fromList (toList p)
+    vars = Set.fromList p
     initialState = M.fromSet (const False) vars
                    -- initial state: all variables initialized to False
 
@@ -101,20 +107,25 @@ extractRHS :: L.RHS vt -> Rational
 extractRHS (L.RHS c []) = c
 extractRHS _ = error "extractRHS: contains unsolved variables"
 
-denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
-denProg p@(s `Return` e) =
+denProgReturn :: (Show vt, Ord vt) => [Stmt vt] -> Expr vt -> [(Bool, Rational)]
+denProgReturn s e =
   renormalize $
   nonzeroes $
   M.toList $
   M.fromListWith (+) $
-  findDenProg p $ \vars initialState ->
+  findDenProg (concatMap toList s ++ toList e) $ \vars initialState ->
     map (\endingState -> (denExpr e endingState, runDenStmt s endingState initialState)) (allPossibleStates vars)
 
-denProg p@(ReturnAll s) =
+denProgReturnAll :: (Show vt, Ord vt) => [Stmt vt] -> [(Sigma vt, Rational)]
+denProgReturnAll s =
   renormalize $
   nonzeroes $
-  findDenProg p $ \vars initialState ->
+  findDenProg (concatMap toList s) $ \vars initialState ->
     map (\endingState -> (endingState, runDenStmt s endingState initialState)) (allPossibleStates vars)
+
+denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
+denProg (s `Return` e) = denProgReturn s e
+denProg (ReturnAll s) = denProgReturnAll s
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]
 renormalize l = map (second (/tot)) l
