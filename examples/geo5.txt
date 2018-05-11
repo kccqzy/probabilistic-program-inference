@@ -1,0 +1,11 @@
+// A more complicated geometric example with the loop containing `r |= flip 0.5`.
+// Credits: Copied from Steven Holtzen's paper, Listing 1.
+
+r ~ bernoulli 0.1;
+s ~ bernoulli 0.5;
+
+while s do {
+  t ~ bernoulli 0.1;
+  r := r || t;
+  s ~ bernoulli 0.5;
+}
