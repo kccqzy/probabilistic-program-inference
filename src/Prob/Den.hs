@@ -3,6 +3,8 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StrictData #-}
+
+-- | Denotational semantics using traditional normalized/unnormalized semantics.
 module Prob.Den
   ( denExpr
   , denStmt
@@ -58,7 +60,7 @@ denStmt ((x :~ Bernoulli theta):next) sigma' sigma = do
         mult k (L.RHS c tms) = L.RHS (k * c) (map (\(L.Term b y) -> L.Term (k*b) y) tms)
         plus :: L.RHS x -> L.RHS x -> L.RHS x
         plus (L.RHS c1 t1) (L.RHS c2 t2) = L.RHS (c1 + c2) (t1++t2)
-denStmt (If e (Then s1) (Else s2):next) sigma' sigma
+denStmt (If e s1 s2:next) sigma' sigma
   | denExpr e sigma = denStmt (s1 ++ next) sigma' sigma
   | otherwise = denStmt (s2 ++ next) sigma' sigma
 denStmt (Observe e:next) sigma' sigma -- requires renormalization at the end
@@ -87,7 +89,7 @@ denStmt (loop@(While e s):next) sigma' sigma = do
           put cl
           pure (L.RHS v [])
   where
-    unrollOnce = denStmt (If e (Then (s ++ [loop])) (Else []) : next) sigma' sigma
+    unrollOnce = denStmt (If e (s ++ [loop]) [] : next) sigma' sigma
     addEqn eqn =
       modify
         (\st ->

@@ -60,7 +60,7 @@ evalStmt (Observe e:next) = do
   if e'
     then evalStmt next
     else MaybeT $ pure Nothing
-evalStmt (If e (Then thenn) (Else alt):next) = do
+evalStmt (If e thenn alt:next) = do
   e' <- evalExpr e
   if e'
     then evalStmt thenn

@@ -3,7 +3,7 @@ version:             0.1.0.0
 author:              "Joe Qian"
 maintainer:          "qzy@g.ucla.edu"
 description:         Exploration of denotation of probabilistic programs
-ghc-options:         -Wall
+ghc-options:         -Wall -O2
 
 dependencies:
 - base

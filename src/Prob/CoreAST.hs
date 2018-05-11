@@ -7,8 +7,6 @@
 module Prob.CoreAST
   ( Expr(..)
   , Dist(..)
-  , Then(..)
-  , Else(..)
   , Stmt(..)
   , Prog(..)
   , Sigma
@@ -43,21 +41,13 @@ infix 2 :~
 
 infix 0 `Return`
 
-newtype Then varTy =
-  Then [Stmt varTy]
-  deriving (Show, Eq, Functor, Foldable, Traversable)
-
-newtype Else varTy =
-  Else [Stmt varTy]
-  deriving (Show, Eq, Functor, Foldable, Traversable)
-
 data Stmt varTy
   = varTy := (Expr varTy)
   | varTy :~ Dist
   | Observe (Expr varTy)
   | If (Expr varTy)
-       (Then varTy)
-       (Else varTy)
+       [Stmt varTy]
+       [Stmt varTy]
   | While (Expr varTy)
           [Stmt varTy]
   deriving (Show, Eq, Functor, Foldable, Traversable)

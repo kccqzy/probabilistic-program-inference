@@ -68,7 +68,7 @@ ifStmt = do
   stmt1 <- braces stmt
   keyword "else"
   stmt2 <- ifStmt <|> braces stmt
-  pure [Core.If cond (Core.Then stmt1) (Core.Else stmt2)]
+  pure [Core.If cond stmt1 stmt2]
 
 whileStmt :: Parser [Stmt]
 whileStmt = do
