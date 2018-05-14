@@ -1,5 +1,5 @@
--- | Denotational semantics using transitional/accepting semantics.
-module Prob.Den2 where
+-- | Denotational semantics using transitional/accepting semantics. Differs from Steven's notes by removing Seq.
+module Prob.Den2LeftFac where
 
 import qualified Data.Map.Strict as M
 import Prob.CoreAST
