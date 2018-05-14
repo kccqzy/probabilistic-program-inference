@@ -78,6 +78,14 @@ whileStmt = do
   body <- braces stmt
   pure [Core.While cond body]
 
+doWhileStmt :: Parser [Stmt]
+doWhileStmt = do
+  keyword "do"
+  body <- braces stmt
+  keyword "while"
+  cond <- expr
+  pure (body ++ [Core.While cond body])
+
 assignStmt :: Parser [Stmt]
 assignStmt = do
   var <- identifier
@@ -100,7 +108,7 @@ observeStmt = do
   pure [Core.Observe e]
 
 stmt :: Parser [Stmt]
-stmt = concat <$> sepEndBy (ifStmt <|> whileStmt <|> skipStmt <|> observeStmt <|> assignStmt <|> braces stmt) semi
+stmt = concat <$> sepEndBy (ifStmt <|> whileStmt <|> doWhileStmt <|> skipStmt <|> observeStmt <|> assignStmt <|> braces stmt) semi
 
 dist :: Parser Core.Dist
 dist = keyword "bernoulli" >> Core.Bernoulli . toRational <$> lexeme L.scientific
