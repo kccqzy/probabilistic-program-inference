@@ -74,16 +74,11 @@ denStmt (loop@(While e s):next) sigma' sigma = do
   case cl of
     Just CurrentLoop {..}
       | clGuard == e && clBody == s -> do
-        when (sigma `Set.notMember` clSeenSigma) $ do
-          let clSeenSigma' = Set.insert sigma clSeenSigma
-          put (Just (CurrentLoop clGuard clBody clSeenSigma' clEqns))
-          r <- unrollOnce
-          addEqn (L.Equation sigma r)
+        when (sigma `Set.notMember` clSeenSigma) $
+          unrollOnce (CurrentLoop clGuard clBody (Set.insert sigma clSeenSigma) clEqns)
         pure $ L.RHS 0 [L.Term 1 sigma]
     _ -> do
-      put (Just (CurrentLoop e s (Set.singleton sigma) []))
-      r <- unrollOnce
-      addEqn (L.Equation sigma r)
+      unrollOnce (CurrentLoop e s (Set.singleton sigma) [])
       newEqns <- gets (clEqns . fromJust)
       case L.solve newEqns of
         Nothing -> error "solution of linear system involves infinity: matrix is not of full rank"
@@ -92,13 +87,14 @@ denStmt (loop@(While e s):next) sigma' sigma = do
           put cl
           pure (L.RHS v [])
   where
-    unrollOnce = denStmt (If e (s ++ [loop]) [] : next) sigma' sigma
-    addEqn eqn =
+    unrollOnce nl = do
+      put (Just nl)
+      r <- denStmt (If e (s ++ [loop]) [] : next) sigma' sigma
       modify
         (\st ->
            case st of
              Nothing -> Nothing
-             Just CurrentLoop {..} -> Just (CurrentLoop clGuard clBody clSeenSigma (eqn : clEqns)))
+             Just CurrentLoop {..} -> Just (CurrentLoop clGuard clBody clSeenSigma (L.Equation sigma r : clEqns)))
 
 runDenStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Sigma vt -> Rational
 runDenStmt stmts sigma' sigma = extractRHS $ evalState (denStmt stmts sigma' sigma) Nothing
