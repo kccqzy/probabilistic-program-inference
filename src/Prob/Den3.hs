@@ -1,42 +1,29 @@
 module Prob.Den3 where
 
-import Control.Monad
 import Data.Bifunctor
-import Data.Foldable
+import Data.List
 import qualified Data.Map.Strict as M
+import Data.Monoid
 import Prob.CoreAST
 import Prob.Den (denExpr)
 
--- | The 'P' monad represents results with probabilities.
-newtype P vt a = P (Sigma vt -> [(Rational, (Sigma vt, a))])
+type P vt = Endo [(Rational, Sigma vt)]
 
-instance Functor (P vt) where
-  fmap = liftM
+denStmts :: (Ord vt, Show vt, Foldable t) => t (Stmt vt) -> P vt
+denStmts = foldMap denStmt
 
-instance Applicative (P vt) where
-  pure a = P $ \s -> [(1, (s, a))]
-  (<*>) = ap
+denStmt :: (Show vt, Ord vt) => Stmt vt -> P vt
+denStmt (x := e) = Endo $ \ss -> map (second (\s -> M.insert x (denExpr e s) s)) ss
+denStmt (x :~ Bernoulli theta) =
+  Endo $ \ss -> concatMap (\(p, s) -> [(p * theta, M.insert x True s), (p * (1 - theta), M.insert x False s)]) ss
+denStmt (Observe e) = Endo $ \ss -> filter (denExpr e . snd) ss
+denStmt (If e s1 s2) =
+  Endo $ \ss ->
+    let (thenBranch, elseBranch) = partition (denExpr e . snd) ss
+    in appEndo (denStmts s1) thenBranch ++ appEndo (denStmts s2) elseBranch
+denStmt loop@(While e s1) = undefined loop e s1
 
-instance Monad (P vt) where
-  P ma >>= f =
-    P $ \s ->
-      concatMap
-        (\(pa, (s', a)) ->
-           let P b = f a
-           in map (first (pa *)) (b s'))
-        (ma s)
-
-denStmts :: (Ord vt, Show vt, Foldable t) => t (Stmt vt) -> P vt ()
-denStmts = traverse_ denStmt
-
-denStmt :: (Show vt, Ord vt) => Stmt vt -> P vt ()
-denStmt (x := e) = P $ \s -> [(1, (M.insert x (denExpr e s) s, ()))]
-denStmt (x :~ Bernoulli theta) = P $ \s -> [(1 - theta, (M.insert x False s, ())), (theta, (M.insert x True s, ()))]
-denStmt (Observe e) = P $ \s -> if denExpr e s then [(1, (s, ()))] else []
-denStmt (If e s1 s2) = P $ \s -> let P p = denStmts (if denExpr e s then s1 else s2) in p s
-denStmt loop@(While e s1) = P $ \s -> if denExpr e s then (let P p = denStmts s1 >> denStmt loop in p s) else [(1, (s, ()))]
-
-test1 :: [(Rational, (Sigma String, ()))]
+test1 :: [(Rational, Sigma String)]
 test1 =
-  let P p = denStmts ["c1" :~ Bernoulli 0.5, While (Var "c1") ["c1" :~ Bernoulli 0.5]]
-  in take 10 (p (M.fromList []))
+  let Endo p = denStmts ["c1" :~ Bernoulli 0.5, If (Var "c1") ["c2" := Constant False] ["c2" := Constant True]]
+  in p [(1, M.fromList [("c1", False)])]
