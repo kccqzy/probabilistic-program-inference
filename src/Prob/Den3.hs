@@ -9,8 +9,8 @@ import Prob.Den (denExpr)
 
 type P vt = Endo [(Rational, Sigma vt)]
 
-denStmts :: (Ord vt, Show vt, Foldable t) => t (Stmt vt) -> P vt
-denStmts = foldMap denStmt
+denStmts :: (Ord vt, Show vt) => [Stmt vt] -> P vt
+denStmts = foldl' (\p s -> denStmt s `mappend` p) mempty
 
 denStmt :: (Show vt, Ord vt) => Stmt vt -> P vt
 denStmt (x := e) = Endo $ \ss -> map (second (\s -> M.insert x (denExpr e s) s)) ss
@@ -26,4 +26,4 @@ denStmt loop@(While e s1) = undefined loop e s1
 test1 :: [(Rational, Sigma String)]
 test1 =
   let Endo p = denStmts ["c1" :~ Bernoulli 0.5, If (Var "c1") ["c2" := Constant False] ["c2" := Constant True]]
-  in p [(1, M.fromList [("c1", False)])]
+  in p [(1, M.fromList [])]
