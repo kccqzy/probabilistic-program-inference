@@ -17,6 +17,7 @@ dependencies:
 - reflection
 - megaparsec
 - text
+- QuickCheck
 
 library:
   source-dirs: src

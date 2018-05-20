@@ -1,12 +1,16 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 -- | Denotational semantics using transitional/accepting semantics.
 module Prob.Den2Ori where
 
 import qualified Data.Map.Strict as M
-import Prob.CoreAST (Dist (..), Expr (..), Sigma)
+import Data.Ratio
+import Prob.CoreAST (Dist (..), Expr (..), Sigma, maxGenVar)
+import qualified Prob.CoreAST as C
 import Prob.Den
+import Test.QuickCheck
 
 data Stmt vt
   = Seq (Stmt vt)
@@ -28,6 +32,9 @@ instance Fractional DivZeroRational where
   fromRational = DivZeroRational . fromRational
   0 / 0 = 0
   DivZeroRational a / DivZeroRational b = DivZeroRational (a / b)
+
+instance Real DivZeroRational where
+  toRational (DivZeroRational x) = x
 
 type R = DivZeroRational
 
@@ -51,9 +58,9 @@ denStmtT Skip sigma' sigma
   | otherwise = 0
 denStmtT (While _ _ ) _ _ = error "not yet"
 denStmtT (Seq s1 s2) sigma' sigma =
-  let !numerator = sumOverAll sigma (\tau -> denStmtT s1 tau sigma * denStmtT s2 sigma' tau * denStmtA s2 tau)
-      !denominator = sumOverAll sigma (\tau -> denStmtT s1 tau sigma * denStmtA s2 tau)
-  in numerator / denominator
+  let !num = sumOverAll sigma (\tau -> denStmtT s1 tau sigma * denStmtT s2 sigma' tau * denStmtA s2 tau)
+      !denom = sumOverAll sigma (\tau -> denStmtT s1 tau sigma * denStmtA s2 tau)
+  in num / denom
 
 -- | Accepting semantics.
 denStmtA :: (Show vt, Ord vt) => Stmt vt -> Sigma vt -> R
@@ -70,6 +77,10 @@ sumOverAll :: (Ord vt) => Sigma vt -> (Sigma vt -> R) -> R
 sumOverAll sigma f = sum (map f (allPossibleStates vars))
   where vars = M.keys sigma
 
+------------------------------------------------------------------------------
+-- Some tests
+------------------------------------------------------------------------------
+
 infixr 2 `Seq`
 
 test2 :: Stmt String
@@ -80,3 +91,55 @@ test3 = "a" :~ Bernoulli 0.2 `Seq` Observe (Var "a")
 
 test3' :: Stmt String
 test3' = "a" :~ Bernoulli 0.2 `Seq` If (Var "a") Skip (Observe (Var "a") `Seq` Observe (Var "a"))
+
+translate :: Stmt vt -> [C.Stmt vt]
+translate (x :~ d) = [x C.:~ d]
+translate (x := v) = [x C.:= v]
+translate (If e s1 s2) = [C.If e (translate s1) (translate s2)]
+translate (While e s1) = [C.While e (translate s1)]
+translate Skip = []
+translate (Observe e) = [C.Observe e]
+translate (Seq s1 s2) = translate s1 ++ translate s2
+
+------------------------------------------------------------------------------
+-- Some automatic tests
+------------------------------------------------------------------------------
+
+instance Arbitrary (Stmt Int) where
+  arbitrary = sized arbitrary'
+    where
+      arbitrary' n
+        | n > 0 =
+          let smaller :: Gen (Stmt Int)
+              smaller = arbitrary' (n `div` 2)
+          in oneof
+               [ Seq <$> smaller <*> smaller
+               , Seq <$> smaller <*> smaller
+               , Seq <$> smaller <*> smaller
+               , Seq <$> smaller <*> smaller
+               , Seq <$> smaller <*> smaller
+               , (:=) <$> choose (1, maxGenVar) <*> arbitrary
+               , (:~) <$> choose (1, maxGenVar) <*> (Bernoulli . (`approxRational` epsilon) <$> choose (0, 1))
+               , If <$> arbitrary <*> smaller <*> smaller
+               , Observe <$> arbitrary
+               ]
+        | otherwise =
+          oneof
+            [ (:=) <$> choose (1, maxGenVar) <*> arbitrary
+            , (:~) <$> choose (1, maxGenVar) <*> (Bernoulli . (`approxRational` epsilon) <$> choose (0, 1))
+            , Observe <$> arbitrary
+            ]
+        where
+          epsilon :: Double
+          epsilon = 0.05
+
+propIdenticalWithOtherSemantics :: Stmt Int -> Property
+propIdenticalWithOtherSemantics stmt =
+  let allSigmas :: [Sigma Int]
+      allSigmas = allPossibleStates stmt
+      prop :: Sigma Int -> Sigma Int -> Property
+      prop sigma' sigma =
+        runDenStmt (translate stmt) sigma' sigma === toRational (denStmtT stmt sigma' sigma * denStmtA stmt sigma)
+      props :: [Property]
+      props = concatMap (\sigma' -> map (prop sigma') allSigmas) allSigmas
+  in conjoin props

@@ -13,6 +13,7 @@ module Prob.Den
   , denProgReturn
   , denProgReturnAll
   , allPossibleStates
+  , runDenStmt
   ) where
 
 import Control.Error
