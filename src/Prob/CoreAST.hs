@@ -72,7 +72,7 @@ pr :: Show a => a -> IO ()
 pr = putStrLn . groom
 
 maxGenVar :: Int
-maxGenVar = 3
+maxGenVar = 2
 
 instance Arbitrary (Expr Int) where
   arbitrary = sized arbitrary'
@@ -80,7 +80,7 @@ instance Arbitrary (Expr Int) where
       arbitrary' n
         | n > 0 =
           let smaller :: Gen (Expr Int)
-              smaller = arbitrary' (n `div` 2)
+              smaller = arbitrary' (n `div` 5)
           in oneof
                [ Var <$> choose (1, maxGenVar)
                , Constant <$> arbitrary

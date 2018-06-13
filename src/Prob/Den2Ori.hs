@@ -84,13 +84,17 @@ sumOverAll sigma f = sum (map f (allPossibleStates vars))
 infixr 2 `Seq`
 
 test2 :: Stmt String
-test2 = "c1" :~ Bernoulli 0.5 `Seq` "c2" :~ Bernoulli 0.5 `Seq` Observe (Var "c1")
+test2 = "c1" :~ Bernoulli 0.5 `Seq` "c2" :~ Bernoulli 0.5 `Seq` Observe ((Var "c1") `Or` (Var "c2"))
 
 test3 :: Stmt String
 test3 = "a" :~ Bernoulli 0.2 `Seq` Observe (Var "a")
 
 test3' :: Stmt String
 test3' = "a" :~ Bernoulli 0.2 `Seq` If (Var "a") Skip (Observe (Var "a") `Seq` Observe (Var "a"))
+
+test2' :: Stmt String
+test2' = "c1" :~ Bernoulli 0.25 `Seq` "c2" :~ Bernoulli 0.5 `Seq` Observe ((Var "c1") `Or` (Var "c2")) `Seq` "c1" := Constant False
+
 
 translate :: Stmt vt -> [C.Stmt vt]
 translate (x :~ d) = [x C.:~ d]
@@ -111,7 +115,7 @@ instance Arbitrary (Stmt Int) where
       arbitrary' n
         | n > 0 =
           let smaller :: Gen (Stmt Int)
-              smaller = arbitrary' (n `div` 2)
+              smaller = arbitrary' (n `div` 5)
           in oneof
                [ Seq <$> smaller <*> smaller
                , Seq <$> smaller <*> smaller
