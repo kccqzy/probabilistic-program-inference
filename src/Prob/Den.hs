@@ -17,6 +17,7 @@ module Prob.Den
   ) where
 
 import Control.Error
+import Control.Monad.Reader
 import Control.Monad.State
 import Data.Bifunctor
 import Data.Foldable
@@ -49,28 +50,26 @@ data CurrentLoop vt = CurrentLoop
   , clEqns :: L.System (Sigma vt)
   } deriving (Show)
 
-type Den vt = State (Maybe (CurrentLoop vt))
+type Den vt = StateT (Maybe (CurrentLoop vt)) (Reader (Sigma vt))
 
-denStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Sigma vt -> Den vt (L.RHS (Sigma vt))
-denStmt [] sigma sigma'
-  | sigma' == sigma = pure (L.RHS 1 [])
-  | otherwise = pure (L.RHS 0 [])
-denStmt ((x := e):next) sigma sigma' = denStmt next (M.insert x (denExpr e sigma) sigma) sigma'
-denStmt ((x :~ Bernoulli theta):next) sigma sigma' = do
-  dTrue <- denStmt next (M.insert x True sigma) sigma'
-  dFalse <- denStmt next (M.insert x False sigma) sigma'
+denStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Den vt (L.RHS (Sigma vt))
+denStmt [] sigma = lift $ ReaderT $ \sigma' -> if sigma' == sigma then pure (L.RHS 1 []) else pure (L.RHS 0 [])
+denStmt ((x := e):next) sigma = denStmt next (M.insert x (denExpr e sigma) sigma)
+denStmt ((x :~ Bernoulli theta):next) sigma = do
+  dTrue <- denStmt next (M.insert x True sigma)
+  dFalse <- denStmt next (M.insert x False sigma)
   pure ((theta `mult` dTrue) `plus` ((1 - theta) `mult` dFalse))
   where mult :: Rational -> L.RHS x -> L.RHS x
         mult k (L.RHS c tms) = L.RHS (k * c) (map (\(L.Term b y) -> L.Term (k*b) y) tms)
         plus :: L.RHS x -> L.RHS x -> L.RHS x
         plus (L.RHS c1 t1) (L.RHS c2 t2) = L.RHS (c1 + c2) (t1++t2)
-denStmt (If e s1 s2:next) sigma sigma'
-  | denExpr e sigma = denStmt (s1 ++ next) sigma sigma'
-  | otherwise = denStmt (s2 ++ next) sigma sigma'
-denStmt (Observe e:next) sigma sigma' -- requires renormalization at the end
-  | denExpr e sigma = denStmt next sigma sigma'
+denStmt (If e s1 s2:next) sigma
+  | denExpr e sigma = denStmt (s1 ++ next) sigma
+  | otherwise = denStmt (s2 ++ next) sigma
+denStmt (Observe e:next) sigma -- requires renormalization at the end
+  | denExpr e sigma = denStmt next sigma
   | otherwise = pure (L.RHS 0 [])
-denStmt (loop@(While e s):next) sigma sigma' = do
+denStmt (loop@(While e s):next) sigma = do
   cl <- get
   case cl of
     Just CurrentLoop {..}
@@ -90,7 +89,7 @@ denStmt (loop@(While e s):next) sigma sigma' = do
   where
     unrollOnce nl = do
       put (Just nl)
-      r <- denStmt (If e (s ++ [loop]) [] : next) sigma sigma'
+      r <- denStmt (If e (s ++ [loop]) [] : next) sigma
       modify
         (\st ->
            case st of
@@ -98,7 +97,9 @@ denStmt (loop@(While e s):next) sigma sigma' = do
              Just CurrentLoop {..} -> Just (CurrentLoop clGuard clBody clSeenSigma (L.Equation sigma r : clEqns)))
 
 runDenStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Sigma vt -> Rational
-runDenStmt stmts sigma sigma' = extractRHS $ evalState (denStmt stmts sigma sigma') Nothing
+runDenStmt stmts sigma =
+  let c = runReader (evalStateT (denStmt stmts sigma) Nothing) in
+  \sigma' -> extractRHS $ c sigma'
 
 findDenProg :: (Ord vt) => [vt] -> (Set.Set vt -> Sigma vt -> r) -> r
 findDenProg p g = g vars initialState
@@ -118,14 +119,16 @@ denProgReturn s e =
   M.toList $
   M.fromListWith (+) $
   findDenProg (concatMap toList s ++ toList e) $ \vars initialState ->
-    map (\endingState -> (denExpr e endingState, runDenStmt s initialState endingState)) (allPossibleStates vars)
+    let r = runDenStmt s initialState in
+    map (\endingState -> (denExpr e endingState, r endingState)) (allPossibleStates vars)
 
 denProgReturnAll :: (Show vt, Ord vt) => [Stmt vt] -> [(Sigma vt, Rational)]
 denProgReturnAll s =
   renormalize $
   nonzeroes $
   findDenProg (concatMap toList s) $ \vars initialState ->
-    map (\endingState -> (endingState, runDenStmt s initialState endingState)) (allPossibleStates vars)
+    let r = runDenStmt s initialState in
+    map (\endingState -> (endingState, r endingState)) (allPossibleStates vars)
 
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
 denProg (s `Return` e) = denProgReturn s e
