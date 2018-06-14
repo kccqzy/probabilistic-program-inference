@@ -143,7 +143,7 @@ propIdenticalWithOtherSemantics stmt =
       allSigmas = allPossibleStates stmt
       prop :: Sigma Int -> Sigma Int -> Property
       prop sigma' sigma =
-        runDenStmt (translate stmt) sigma' sigma === toRational (denStmtT stmt sigma' sigma * denStmtA stmt sigma)
+        runDenStmt (translate stmt) sigma sigma' === toRational (denStmtT stmt sigma' sigma * denStmtA stmt sigma)
       props :: [Property]
       props = concatMap (\sigma' -> map (prop sigma') allSigmas) allSigmas
   in conjoin props
