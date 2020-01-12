@@ -9,7 +9,6 @@ dependencies:
 - base
 - mwc-random
 - mtl
-- groom
 - transformers
 - errors
 - containers
@@ -17,7 +16,6 @@ dependencies:
 - reflection
 - megaparsec
 - text
-- QuickCheck
 
 library:
   source-dirs: src
