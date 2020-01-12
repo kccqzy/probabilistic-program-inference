@@ -23,18 +23,16 @@ Their meaning will become clear in the following examples.
 
 ## Running the Tool
 
-To run the tool, simply have [the Haskell `stack`
+If you wish to compile from source, have [the Haskell `stack`
 tool](http://haskellstack.org) ready. It is a program for developing
 Haskell projects, with automated compiler installation and dependency
-installation.
+installation. Then, run `stack build` in the root directory of the repo.
 
-Then, run 
+If you do not wish to compile, download a pre-compiled executable from
+the [GitHub release
+page](https://github.com/kccqzy/probabilistic-program-inference/releases/tag/v1.0).
 
-```
-stack build
-```
-
-to build. Finally, run 
+Finally, run
 
 ```
 stack exec -- prob /path/to/program.txt
