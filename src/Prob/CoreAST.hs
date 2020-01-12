@@ -25,7 +25,7 @@ data Expr varTy
   | Not (Expr varTy)
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
-data Dist =
+newtype Dist =
   Bernoulli Rational
   deriving (Show, Eq)
 

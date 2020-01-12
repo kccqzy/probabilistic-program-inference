@@ -81,23 +81,18 @@ denStmt (loop@(While e s):next) sigma = do
       case L.solve newEqns of
         Nothing -> error "solution of linear system involves infinity: matrix is not of full rank"
         Just m -> do
-          let v = fromJust $ M.lookup sigma m
           put cl
-          pure (L.RHS v [])
+          pure (L.RHS (m M.! sigma) [])
   where
     unrollOnce nl = do
       put (Just nl)
       r <- denStmt (If e (s ++ [loop]) [] : next) sigma
-      modify
-        (\st ->
-           case st of
-             Nothing -> Nothing
-             Just CurrentLoop {..} -> Just (CurrentLoop clGuard clBody clSeenSigma (L.Equation sigma r : clEqns)))
+      modify (fmap (\cl -> cl { clEqns = L.Equation sigma r : clEqns cl}))
 
 runDenStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Sigma vt -> Rational
 runDenStmt stmts sigma =
   let c = runReader (evalStateT (denStmt stmts sigma) Nothing) in
-  \sigma' -> extractRHS $ c sigma'
+  extractRHS . c
 
 findDenProg :: (Ord vt) => [vt] -> (Set.Set vt -> Sigma vt -> r) -> r
 findDenProg p g = g vars initialState
