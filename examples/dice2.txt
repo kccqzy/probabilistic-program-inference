@@ -30,9 +30,8 @@ carry := b2 and c2 or carry and (b2 xor c2);
 
 s3 := carry;
 
-// We observe their sum to be eleven.
-
-observe s0;
+// We observe their sum to be ten.
+observe not s0;
 observe s1;
 observe not s2;
 observe s3;
