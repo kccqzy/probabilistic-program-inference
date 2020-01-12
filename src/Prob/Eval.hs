@@ -2,6 +2,9 @@
 module Prob.Eval
   ( runE
   , runEs
+  , Eval
+  , ProgState
+  , evalProg
   , sampled
   , tally
   ) where
@@ -13,6 +16,7 @@ import Control.Monad.State
 import Data.Bifunctor
 import Data.List
 import qualified Data.Map.Strict as M
+import Data.Ratio
 import Prob.CoreAST
 import System.Random.MWC
 import System.Random.MWC.Distributions
@@ -83,5 +87,5 @@ evalProg (ReturnAll stmt) = evalStmt stmt >> gets fst
 tally :: Ord a => [a] -> [(a, Int)]
 tally = map (liftA2 (,) head length) . group . sort
 
-sampled :: (Show vt, Ord vt, Ord r) => Prog r vt -> IO [(r, Int)]
-sampled prog = tally <$> runEs 10000 (evalProg prog)
+sampled :: (Show vt, Ord vt, Ord r) => Int -> Prog r vt -> IO [(r, Rational)]
+sampled t prog = (fmap.fmap) (\n -> fromIntegral n % fromIntegral t) . tally <$> runEs t (evalProg prog)

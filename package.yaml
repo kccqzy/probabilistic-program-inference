@@ -26,4 +26,5 @@ executables:
     source-dirs: main
     dependencies:
       - base
+      - optparse-applicative
       - prob-den
