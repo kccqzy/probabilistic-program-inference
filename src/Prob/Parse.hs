@@ -9,6 +9,7 @@ module Prob.Parse
   ) where
 
 import Control.Monad
+import Control.Monad.Combinators.Expr
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.Void
@@ -17,7 +18,6 @@ import System.IO
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
-import Text.Megaparsec.Expr
 
 type Expr = Core.Expr T.Text
 type Stmt = Core.Stmt T.Text
@@ -50,7 +50,7 @@ keyword :: T.Text -> Parser ()
 keyword w = (lexeme . try) (string w *> notFollowedBy alphaNumChar)
 
 identifier :: Parser T.Text
-identifier = (lexeme . try) (p >>= check)
+identifier = (lexeme . try) (p >>= check) <?> "identifier"
   where
     p = T.pack <$> ((:) <$> letterChar <*> many alphaNumChar)
     check x =
@@ -140,7 +140,7 @@ doParseFromFile filename = do
   input <- TIO.readFile filename
   case parse (prog <* eof) filename input of
     Right x -> pure (Just x)
-    Left e -> hPutStr stderr (parseErrorPretty' input e) >> pure Nothing
+    Left e -> hPutStr stderr (errorBundlePretty e) >> pure Nothing
 
 doParsePure :: T.Text -> Maybe Prog
 doParsePure = parseMaybe prog
