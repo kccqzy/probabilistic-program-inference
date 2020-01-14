@@ -10,11 +10,12 @@ module Prob.Eval
   ) where
 
 import Control.Applicative
-import Control.Error
 import Control.Monad.ST
 import Control.Monad.State
+import Control.Monad.Trans.Maybe
 import Data.Bifunctor
 import Data.List
+import Data.Maybe
 import Data.Ratio
 import qualified Data.Set as Set
 import Prob.CoreAST
@@ -87,5 +88,9 @@ evalProg (ReturnAll stmt) = evalStmt stmt >> gets fst
 tally :: Ord a => [a] -> [(a, Int)]
 tally = map (liftA2 (,) head length) . group . sort
 
+renormalize :: [(a, Int)] -> [(a, Rational)]
+renormalize l = fmap (fmap (\n -> fromIntegral n % fromIntegral tot)) l
+  where tot = sum (map snd l)
+
 sampled :: (Show vt, Ord vt, Ord r) => Int -> Prog r vt -> IO [(r, Rational)]
-sampled t prog = (fmap.fmap) (\n -> fromIntegral n % fromIntegral t) . tally <$> runEs t (evalProg prog)
+sampled t prog = renormalize . tally <$> runEs t (evalProg prog)

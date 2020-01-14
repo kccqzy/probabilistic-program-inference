@@ -10,7 +10,6 @@ dependencies:
 - mwc-random
 - mtl
 - transformers
-- errors
 - containers >= 0.5.11
 - array
 - reflection
