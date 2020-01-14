@@ -8,6 +8,8 @@ module Prob.Pretty
 
 import Data.Bifunctor
 import Data.Foldable
+import Data.List
+import Data.Ord
 import Data.Ratio
 import qualified Data.Set as Set
 import Prob.CoreAST
@@ -22,13 +24,13 @@ handleProgPretty p m = formatResult <$> r
     allVars :: Set.Set vt
     allVars =
       Set.fromList $ case p of Return s e -> concatMap toList s ++ toList e; ReturnAll s -> concatMap toList s
-    r :: IO [(String, String)]
+    r :: IO [(ShowS, Rational)]
     r =
       case p of
-        Return {} -> map (bimap (`shows` " ") (($ []) . formatRational)) <$> (case m of ModeDen -> pure (denProg p); ModeEval t -> sampled t p)
-        ReturnAll {} -> map (bimap pprMap (($ []) . formatRational)) <$> (case m of ModeDen -> pure (denProg p); ModeEval t -> sampled t p)
+        Return {} -> map (first shows) <$> (case m of ModeDen -> pure (denProg p); ModeEval t -> sampled t p)
+        ReturnAll {} -> map (first pprMap) <$> (case m of ModeDen -> pure (denProg p); ModeEval t -> sampled t p)
       where
-        pprMap :: Sigma vt -> String
+        pprMap :: Sigma vt -> ShowS
         pprMap sigma =
           foldr
             (\var s ->
@@ -37,22 +39,21 @@ handleProgPretty p m = formatResult <$> r
                showString
                  (if Set.member var sigma
                     then "  true "
-                    else " false ") $
+                    else " false ") .
                s)
-            " "
+            (showString " ")
             allVars
-        formatRational rat = shows (numerator rat) . showChar '/' . shows (denominator rat)
-    formatResult :: [(String, String)] -> ShowS
+    formatResult :: [(ShowS, Rational)] -> ShowS
     formatResult [] = showString "No results produced.\n"
     formatResult rr =
       bars .
       foldr
-        (\(col1, col2) s ->
-           showString col1 . showString (replicate (maxLen1 - length col1) ' ') . showString col2 . showChar '\n' . s)
+        (\(col1, col2) s -> col1 . formatRational col2 . showChar '\n' . s)
         id
-        rr
+        (sortBy (comparing snd) rr)
       where
-        maxLen1 = maximum (length . fst <$> rr)
-        maxLen2 = maximum (length . snd <$> rr)
+        formatRational rat = shows (numerator rat) . showChar '/' . shows (denominator rat)
+        maxLen1 = sum [ 10 + length (show v)| v <- Set.toList allVars ]
+        maxLen2 = maximum [ length (formatRational v []) | v <- map snd rr ]
         bars =
-          showString (replicate (maxLen1 - 1) '-') . showChar ' ' . showString (replicate maxLen2 '-') . showChar '\n'
+          showString (replicate (maxLen1 - 1) '-') . showString "  " . showString (replicate maxLen2 '-') . showChar '\n'
