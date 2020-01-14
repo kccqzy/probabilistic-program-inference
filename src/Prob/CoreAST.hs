@@ -9,9 +9,10 @@ module Prob.CoreAST
   , Stmt(..)
   , Prog(..)
   , Sigma
+  , sigmaInsert
   ) where
 
-import qualified Data.Map.Strict as M
+import qualified Data.Set as Set
 import Data.String
 
 -- | The syntax of expressions, parametrized by the representation of variables
@@ -59,5 +60,10 @@ deriving instance Foldable (Prog r)
 instance IsString (Expr String) where
   fromString = Var
 
--- | Sigma is just the set of all variables assignments.
-type Sigma vt = M.Map vt Bool
+-- | Sigma is just the set of all variables assignments. Since our language only
+-- ever deals with Bool variables, we use a 'Set.Set' and the presence/absence
+-- indicates their values.
+type Sigma vt = Set.Set vt
+
+sigmaInsert :: Ord vt => vt -> Bool -> Sigma vt -> Sigma vt
+sigmaInsert x v = (if v then Set.insert else Set.delete) x

@@ -15,7 +15,6 @@ module Prob.Den
   , runDenStmt
   ) where
 
-import Control.Error
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.Bifunctor
@@ -30,11 +29,11 @@ import qualified Prob.LinearEq as L
 -- Denotational Semantics
 --------------------------------------------------------------------------------
 
-allPossibleStates :: (Ord k, Foldable t) => t k -> [M.Map k Bool]
-allPossibleStates = foldr (\var -> concatMap (\st -> [M.insert var True st, M.insert var False st])) [M.empty]
+allPossibleStates :: (Ord k) => Set.Set k -> [Sigma k]
+allPossibleStates = Set.toList . Set.powerSet
 
 denExpr :: (Show vt, Ord vt) => Expr vt -> Sigma vt -> Bool
-denExpr (Var x) sigma = fromMaybe (error $ "undefined variable " ++ show x) $ M.lookup x sigma
+denExpr (Var x) sigma = Set.member x sigma
 denExpr (Constant d) _ = d
 denExpr (Or a b) sigma = denExpr a sigma || denExpr b sigma
 denExpr (And a b) sigma = denExpr a sigma && denExpr b sigma
@@ -52,10 +51,10 @@ type Den vt = StateT (Maybe (CurrentLoop vt)) (Reader (Sigma vt))
 
 denStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Den vt (L.RHS (Sigma vt))
 denStmt [] sigma = lift $ ReaderT $ \sigma' -> if sigma' == sigma then pure (L.RHS 1 []) else pure (L.RHS 0 [])
-denStmt ((x := e):next) sigma = denStmt next (M.insert x (denExpr e sigma) sigma)
+denStmt ((x := e):next) sigma = denStmt next (sigmaInsert x (denExpr e sigma) sigma)
 denStmt ((x :~ Bernoulli theta):next) sigma = do
-  dTrue <- denStmt next (M.insert x True sigma)
-  dFalse <- denStmt next (M.insert x False sigma)
+  dTrue <- denStmt next (sigmaInsert x True sigma)
+  dFalse <- denStmt next (sigmaInsert x False sigma)
   pure ((theta `mult` dTrue) `plus` ((1 - theta) `mult` dFalse))
   where mult :: Rational -> L.RHS x -> L.RHS x
         mult k (L.RHS c tms) = L.RHS (k * c) (map (\(L.Term b y) -> L.Term (k*b) y) tms)
@@ -98,7 +97,7 @@ findDenProg :: (Ord vt) => [vt] -> (Set.Set vt -> Sigma vt -> r) -> r
 findDenProg p g = g vars initialState
   where
     vars = Set.fromList p
-    initialState = M.fromSet (const False) vars
+    initialState = Set.empty
                    -- initial state: all variables initialized to False
 
 extractRHS :: L.RHS vt -> Rational

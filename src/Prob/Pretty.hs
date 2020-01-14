@@ -7,8 +7,9 @@ module Prob.Pretty
   ) where
 
 import Data.Bifunctor
-import qualified Data.Map.Strict as M
+import Data.Foldable
 import Data.Ratio
+import qualified Data.Set as Set
 import Prob.CoreAST
 import Prob.Den (denProg)
 import Prob.Eval (sampled)
@@ -18,6 +19,9 @@ data Mode = ModeDen | ModeEval Int
 handleProgPretty :: forall vt r. (Show vt, Ord vt) => Prog r vt -> Mode -> IO ShowS
 handleProgPretty p m = formatResult <$> r
   where
+    allVars :: Set.Set vt
+    allVars =
+      Set.fromList $ case p of Return s e -> concatMap toList s ++ toList e; ReturnAll s -> concatMap toList s
     r :: IO [(String, String)]
     r =
       case p of
@@ -25,17 +29,18 @@ handleProgPretty p m = formatResult <$> r
         ReturnAll {} -> map (bimap pprMap (($ []) . formatRational)) <$> (case m of ModeDen -> pure (denProg p); ModeEval t -> sampled t p)
       where
         pprMap :: Sigma vt -> String
-        pprMap =
-          M.foldrWithKey
-            (\var val s ->
+        pprMap sigma =
+          foldr
+            (\var s ->
                shows var .
                showString " ->" .
                showString
-                 (if val
+                 (if Set.member var sigma
                     then "  true "
                     else " false ") $
                s)
             " "
+            allVars
         formatRational rat = shows (numerator rat) . showChar '/' . shows (denominator rat)
     formatResult :: [(String, String)] -> ShowS
     formatResult [] = showString "No results produced.\n"

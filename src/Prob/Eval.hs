@@ -15,8 +15,8 @@ import Control.Monad.ST
 import Control.Monad.State
 import Data.Bifunctor
 import Data.List
-import qualified Data.Map.Strict as M
 import Data.Ratio
+import qualified Data.Set as Set
 import Prob.CoreAST
 import System.Random.MWC
 import System.Random.MWC.Distributions
@@ -32,13 +32,13 @@ type ProgState vt s = (Sigma vt, Gen s)
 type Eval vt s = MaybeT (StateT (ProgState vt s) (ST s))
 
 runE :: Eval vt s a -> IO (Maybe a)
-runE e = withSystemRandom . asGenST $ (\rng -> evalStateT (runMaybeT e) (M.empty, rng))
+runE e = withSystemRandom . asGenST $ (\rng -> evalStateT (runMaybeT e) (Set.empty, rng))
 
 runEs :: Int -> Eval vt s a -> IO [a]
-runEs t e = withSystemRandom . asGenST $ (\rng -> catMaybes <$> evalStateT (replicateM t (runMaybeT e)) (M.empty, rng))
+runEs t e = withSystemRandom . asGenST $ (\rng -> catMaybes <$> evalStateT (replicateM t (runMaybeT e)) (Set.empty, rng))
 
 evalExpr :: (Show vt, Ord vt) => Expr vt -> Eval vt s Bool
-evalExpr (Var x) = fromMaybe (error $ "undefined variable " ++ show x) <$> gets (M.lookup x . fst)
+evalExpr (Var x) = gets (Set.member x . fst)
 evalExpr (Constant d) = pure d
 evalExpr (Or a b) = liftA2 (||) (evalExpr a) (evalExpr b)
 evalExpr (And a b) = liftA2 (&&) (evalExpr a) (evalExpr b)
@@ -54,11 +54,11 @@ evalStmt :: (Show vt, Ord vt) => [Stmt vt] -> Eval vt s ()
 evalStmt [] = pure ()
 evalStmt ((x := a):next) = do
   v <- evalExpr a
-  modify (first (M.insert x v))
+  modify (first (sigmaInsert x v))
   evalStmt next
 evalStmt ((x :~ d):next) = do
   v <- drawDist d
-  modify (first (M.insert x v))
+  modify (first (sigmaInsert x v))
   evalStmt next
 evalStmt (Observe e:next) = do
   e' <- evalExpr e
