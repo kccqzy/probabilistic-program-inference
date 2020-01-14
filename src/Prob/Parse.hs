@@ -89,14 +89,14 @@ doWhileStmt = do
 assignStmt :: Parser [Stmt]
 assignStmt = do
   var <- identifier
-  deterministic <- (True <$ symbol ":=") <|> (False <$ symbol "~")
-  if deterministic
-    then do
-      val <- expr
-      pure [var Core.:= val]
-    else do
-      d <- dist
-      pure [var Core.:~ d]
+  choice
+    [ do void (symbol ":=")
+         val <- expr
+         pure [var Core.:= val]
+    , do void (symbol "~")
+         d <- dist
+         pure [var Core.:~ d]
+    ]
 
 skipStmt :: Parser [Stmt]
 skipStmt = keyword "skip" >> pure []
