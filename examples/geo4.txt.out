@@ -1,0 +1,7 @@
+-----------------------------------------------------------------------  ----
+"b" -> false "bogus" ->  true "x0" ->  true "x1" -> false "x2" -> false  1/14
+"b" -> false "bogus" -> false "x0" ->  true "x1" -> false "x2" -> false  1/14
+"b" -> false "bogus" ->  true "x0" -> false "x1" -> false "x2" ->  true  1/7
+"b" -> false "bogus" -> false "x0" -> false "x1" -> false "x2" ->  true  1/7
+"b" -> false "bogus" ->  true "x0" -> false "x1" ->  true "x2" -> false  2/7
+"b" -> false "bogus" -> false "x0" -> false "x1" ->  true "x2" -> false  2/7

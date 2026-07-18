@@ -1,0 +1,7 @@
+-----------------------------------------  ---
+"b0" ->  true "b1" -> false "b2" -> false  1/6
+"b0" ->  true "b1" ->  true "b2" -> false  1/6
+"b0" ->  true "b1" -> false "b2" ->  true  1/6
+"b0" -> false "b1" ->  true "b2" -> false  1/6
+"b0" -> false "b1" ->  true "b2" ->  true  1/6
+"b0" -> false "b1" -> false "b2" ->  true  1/6

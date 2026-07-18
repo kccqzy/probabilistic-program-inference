@@ -1,0 +1,5 @@
+./examples/dice-parse-error.txt:4:17:
+  |
+4 | b0 ~ bernoulli 5;
+  |                 ^
+bernoulli p 5.0 cannot be outside [0, 1]

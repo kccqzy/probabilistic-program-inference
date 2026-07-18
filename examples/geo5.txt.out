@@ -1,0 +1,4 @@
+--------------------------------------  -----
+"r" ->  true "s" -> false "t" -> false  9/110
+"r" ->  true "s" -> false "t" ->  true  1/10
+"r" -> false "s" -> false "t" -> false  9/11

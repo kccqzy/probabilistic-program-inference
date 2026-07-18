@@ -1,0 +1,9 @@
+--------------------------------------------------------------------------------------------------  -----
+"coin" -> false "overflow" ->  true "timesBit0" ->  true "timesBit1" ->  true "timesBit2" ->  true  1/128
+"coin" -> false "overflow" -> false "timesBit0" ->  true "timesBit1" ->  true "timesBit2" ->  true  1/128
+"coin" -> false "overflow" -> false "timesBit0" -> false "timesBit1" ->  true "timesBit2" ->  true  1/64
+"coin" -> false "overflow" -> false "timesBit0" ->  true "timesBit1" -> false "timesBit2" ->  true  1/32
+"coin" -> false "overflow" -> false "timesBit0" -> false "timesBit1" -> false "timesBit2" ->  true  1/16
+"coin" -> false "overflow" -> false "timesBit0" ->  true "timesBit1" ->  true "timesBit2" -> false  1/8
+"coin" -> false "overflow" -> false "timesBit0" -> false "timesBit1" ->  true "timesBit2" -> false  1/4
+"coin" -> false "overflow" -> false "timesBit0" ->  true "timesBit1" -> false "timesBit2" -> false  1/2

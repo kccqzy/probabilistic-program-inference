@@ -1,0 +1,4 @@
+------------------------------------------------------  ---
+"b" -> false "x0" ->  true "x1" -> false "x2" -> false  1/7
+"b" -> false "x0" -> false "x1" -> false "x2" ->  true  2/7
+"b" -> false "x0" -> false "x1" ->  true "x2" -> false  4/7
