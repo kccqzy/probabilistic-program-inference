@@ -111,7 +111,12 @@ stmt :: Parser [Stmt]
 stmt = concat <$> sepEndBy (ifStmt <|> whileStmt <|> doWhileStmt <|> skipStmt <|> observeStmt <|> assignStmt <|> braces stmt) semi
 
 dist :: Parser Core.Dist
-dist = keyword "bernoulli" >> Core.Bernoulli . toRational <$> lexeme L.scientific
+dist = do
+  keyword "bernoulli"
+  r <- lexeme L.scientific
+  if 0 <= r && r <= 1
+    then pure (Core.Bernoulli (toRational r))
+    else fail $ "bernoulli p " ++ show r ++ " cannot be outside [0, 1]"
 
 expr :: Parser Expr
 expr = makeExprParser terms operators
