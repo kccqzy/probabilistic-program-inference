@@ -39,6 +39,18 @@ inverse m = star (one <+> fmap (Real . negate) m)
 solveAffine :: (Eq a, Ix i, Bounded i, Fractional a) => Matrix i a -> Vector i a -> Vector i (Compact a)
 solveAffine a b = star (fmap Real a) `mult` fmap Real b
 
+-- | Solve @x = a x + b@ for a whole collection of right-hand sides @b@ at once,
+-- computing the expensive @star a@ once and reusing it for every @b@. @t@ is any
+-- functor of right-hand sides. (If @t@ is empty the @star@ is never forced.)
+solveAffineMany ::
+     (Eq a, Ix i, Bounded i, Fractional a, Functor t)
+  => Matrix i a
+  -> t (Vector i a)
+  -> t (Vector i (Compact a))
+solveAffineMany a = fmap (\b -> aStar `mult` fmap Real b)
+  where
+    aStar = star (fmap Real a)
+
 entireRange :: (Ix i, Bounded i) => [i]
 entireRange = range (minBound, maxBound)
 

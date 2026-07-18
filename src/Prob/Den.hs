@@ -11,15 +11,12 @@ module Prob.Den
   , denProg
   , denProgReturn
   , denProgReturnAll
-  , allPossibleStates
   , runDenStmt
   ) where
 
 import Control.Monad
-import Control.Monad.Reader
 import Control.Monad.State
 import Data.Bifunctor
-import Data.Foldable
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Set as Set
@@ -30,8 +27,11 @@ import qualified Prob.LinearEq as L
 -- Denotational Semantics
 --------------------------------------------------------------------------------
 
-allPossibleStates :: (Ord k) => Set.Set k -> [Sigma k]
-allPossibleStates = Set.toList . Set.powerSet
+-- | A (sparse, unnormalized) distribution over states, supported on the
+-- reachable states. This is the main return type of 'denStmt': the whole
+-- distribution over ending states is computed in one pass, rather than the
+-- kernel being evaluated pointwise at each of the 2^N possible ending states.
+type Distr s = M.Map s Rational
 
 denExpr :: (Show vt, Ord vt) => Expr vt -> Sigma vt -> Bool
 denExpr (Var x) sigma = Set.member x sigma
@@ -45,28 +45,36 @@ data CurrentLoop vt = CurrentLoop
   { clGuard :: Expr vt
   , clBody :: [Stmt vt]
   , clSeenSigma :: Set.Set (Sigma vt)
-  , clEqns :: L.System (Sigma vt)
-  } deriving (Show)
+  , clEqns :: [(Sigma vt, Ret vt)]
+  }
 
-type Den vt = StateT (Maybe (CurrentLoop vt)) (Reader (Sigma vt))
+type Den vt = State (Maybe (CurrentLoop vt))
 
-denStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Den vt (L.RHS (Sigma vt))
-denStmt [] sigma = lift $ ReaderT $ \sigma' -> if sigma' == sigma then pure (L.RHS 1 []) else pure (L.RHS 0 [])
+-- | The denotation of a statement list: an (unnormalized) distribution over
+-- ending states, plus — while inside a loop — symbolic references to loop states
+-- (the 'L.Term's) that 'L.solveMany' later resolves. At the top level the
+-- reference list is empty and a 'Ret' is just a 'Distr'.
+data Ret vt = Ret (Distr (Sigma vt)) [L.Term (Sigma vt)]
+
+scaleRet :: Rational -> Ret vt -> Ret vt
+scaleRet k (Ret d tms) = Ret (M.map (k *) d) [L.Term (k * b) y | L.Term b y <- tms]
+
+plusRet :: Ord vt => Ret vt -> Ret vt -> Ret vt
+plusRet (Ret d1 t1) (Ret d2 t2) = Ret (M.unionWith (+) d1 d2) (t1 ++ t2)
+
+denStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Den vt (Ret vt)
+denStmt [] sigma = pure (Ret (M.singleton sigma 1) [])
 denStmt ((x := e):next) sigma = denStmt next (sigmaInsert x (denExpr e sigma) sigma)
 denStmt ((x :~ Bernoulli theta):next) sigma = do
   dTrue <- denStmt next (sigmaInsert x True sigma)
   dFalse <- denStmt next (sigmaInsert x False sigma)
-  pure ((theta `mult` dTrue) `plus` ((1 - theta) `mult` dFalse))
-  where mult :: Rational -> L.RHS x -> L.RHS x
-        mult k (L.RHS c tms) = L.RHS (k * c) (map (\(L.Term b y) -> L.Term (k*b) y) tms)
-        plus :: L.RHS x -> L.RHS x -> L.RHS x
-        plus (L.RHS c1 t1) (L.RHS c2 t2) = L.RHS (c1 + c2) (t1++t2)
+  pure (scaleRet theta dTrue `plusRet` scaleRet (1 - theta) dFalse)
 denStmt (If e s1 s2:next) sigma
   | denExpr e sigma = denStmt (s1 ++ next) sigma
   | otherwise = denStmt (s2 ++ next) sigma
 denStmt (Observe e:next) sigma -- requires renormalization at the end
   | denExpr e sigma = denStmt next sigma
-  | otherwise = pure (L.RHS 0 [])
+  | otherwise = pure (Ret M.empty [])
 denStmt (loop@(While e s):next) sigma = do
   cl <- get
   case cl of
@@ -74,38 +82,53 @@ denStmt (loop@(While e s):next) sigma = do
       | clGuard == e && clBody == s -> do
         when (sigma `Set.notMember` clSeenSigma) $
           unrollOnce (CurrentLoop clGuard clBody (Set.insert sigma clSeenSigma) clEqns)
-        pure $ L.RHS 0 [L.Term 1 sigma]
+        pure (Ret M.empty [L.Term 1 sigma])
     _ -> do
       unrollOnce (CurrentLoop e s (Set.singleton sigma) [])
       newEqns <- gets (clEqns . fromJust)
-      -- Safe: solve never returns Nothing on systems produced by denStmt.
-      -- Mass conservation forces b_j = 0 for every j in a recurrent class of
-      -- A, so Inf entries of star(A) are absorbed (Inf <.> Real 0 = Real 0)
-      -- and the solution vector is always finite.
-      let m = fromJust (L.solve newEqns)
+      -- The coefficient matrix A (the 'L.Term's) depends only on the program,
+      -- while the exit distribution differs per loop state. Regroup those exit
+      -- distributions into one right-hand-side column per ending state and solve
+      -- them all against the single factorization of A (see 'L.solveMany').
+      -- Safe fromJust: mass conservation keeps every column finite.
+      let coeffs = [L.Row st tms | (st, Ret _ tms) <- newEqns]
+          exitColumns = transposeExit [(st, d) | (st, Ret d _) <- newEqns]
+          solution = fromJust (L.solveMany coeffs exitColumns)
+          -- The exit distribution for the loop's entry state is that state's
+          -- coordinate across every column.
+          exitDist = M.map (M.findWithDefault 0 sigma) solution
       put cl
-      pure (L.RHS (m M.! sigma) [])
+      pure (Ret exitDist [])
   where
     unrollOnce nl = do
       put (Just nl)
       r <- denStmt (If e (s ++ [loop]) [] : next) sigma
-      modify (fmap (\cl -> cl { clEqns = L.Equation sigma r : clEqns cl}))
+      modify (fmap (\c -> c { clEqns = (sigma, r) : clEqns c }))
 
-runDenStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Sigma vt -> Rational
-runDenStmt stmts sigma =
-  let c = runReader (evalStateT (denStmt stmts sigma) Nothing) in
-  extractRHS . c
+-- | Regroup per-state loop exit distributions into per-ending-state right-hand-side
+-- columns: from @[(loopState, ending -> mass)]@ to @ending -> (loopState ->
+-- mass)@, i.e. the columns @B@ that 'L.solveMany' consumes.
+transposeExit :: Ord vt => [(Sigma vt, Distr (Sigma vt))] -> M.Map (Sigma vt) (L.Vec (Sigma vt))
+transposeExit rows =
+  M.fromListWith (M.unionWith (+))
+    [ (ending, M.singleton st w)
+    | (st, d) <- rows
+    , (ending, w) <- M.toList d
+    ]
 
-findDenProg :: (Ord vt) => [vt] -> (Set.Set vt -> Sigma vt -> r) -> r
-findDenProg p g = g vars initialState
-  where
-    vars = Set.fromList p
-    initialState = Set.empty
-                   -- initial state: all variables initialized to False
+runDenStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Distr (Sigma vt)
+runDenStmt stmts sigma = extractDist (evalState (denStmt stmts sigma) Nothing)
 
-extractRHS :: L.RHS vt -> Rational
-extractRHS (L.RHS c []) = c
-extractRHS _ = error "extractRHS: contains unsolved variables"
+-- | Run a denotation from the initial state, in which all variables are
+-- @False@. With the distribution-valued 'denStmt', the answer is the entire
+-- distribution over ending states — there is no longer any 2^N enumeration of
+-- ending states to drive.
+fromInitialState :: (Sigma vt -> r) -> r
+fromInitialState g = g Set.empty
+
+extractDist :: Ret vt -> Distr (Sigma vt)
+extractDist (Ret d []) = d
+extractDist _ = error "extractDist: contains unsolved loop variables"
 
 denProgReturn :: (Show vt, Ord vt) => [Stmt vt] -> Expr vt -> [(Bool, Rational)]
 denProgReturn s e =
@@ -113,17 +136,17 @@ denProgReturn s e =
   nonzeroes $
   M.toList $
   M.fromListWith (+) $
-  findDenProg (concatMap toList s ++ toList e) $ \vars initialState ->
-    let r = runDenStmt s initialState in
-    map (\endingState -> (denExpr e endingState, r endingState)) (allPossibleStates vars)
+  map (first (denExpr e)) $
+  fromInitialState $ \initialState ->
+    M.toList (runDenStmt s initialState)
 
 denProgReturnAll :: (Show vt, Ord vt) => [Stmt vt] -> [(Sigma vt, Rational)]
 denProgReturnAll s =
   renormalize $
   nonzeroes $
-  findDenProg (concatMap toList s) $ \vars initialState ->
-    let r = runDenStmt s initialState in
-    map (\endingState -> (endingState, r endingState)) (allPossibleStates vars)
+  M.toList $
+  fromInitialState $ \initialState ->
+    runDenStmt s initialState
 
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
 denProg (s `Return` e) = denProgReturn s e
