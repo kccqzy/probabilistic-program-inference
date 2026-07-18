@@ -38,15 +38,39 @@ type Coeffs x = [Row x]
 -- | A sparse vector indexed by variables; a missing key denotes zero.
 type Vec x = M.Map x Rational
 
--- | Represents an integral type with its bounds readjusted.
-newtype BoundedW i s = BoundedW i deriving (Eq, Ord, Ix)
+-- | The variables of the system in index order, reified so that the solver's
+-- index type can recover a variable from its position with no separate map.
+newtype VarArr x = VarArr (Array Int x)
 
--- | The real bounds.
-data Bounds i = Bounds {minBound_ , maxBound_ :: i}
+-- | The index type threaded through the star-semiring solver: a variable's
+-- position — which drives the O(1) 'Ix' and 'Bounded' instances — paired with
+-- the variable itself, so results read back without a lookup. The payload is
+-- lazy (@~x@) so that 'minBound'/'maxBound' on an empty system never
+-- dereference the (empty) 'VarArr'.
+data VarW x s = VarW !Int ~x
 
-instance (Reifies s (Bounds i)) => Bounded (BoundedW i s) where
-  minBound = BoundedW (minBound_ (reflect (Proxy :: Proxy s)))
-  maxBound = BoundedW (maxBound_ (reflect (Proxy :: Proxy s)))
+instance Eq (VarW x s) where
+  VarW i _ == VarW j _ = i == j
+
+instance Ord (VarW x s) where
+  compare (VarW i _) (VarW j _) = compare i j
+
+-- | The 'VarW' at a given position, its variable read from the reified array.
+varAt :: forall s x. Reifies s (VarArr x) => Int -> VarW x s
+varAt i = let VarArr a = reflect (Proxy :: Proxy s) in VarW i (a ! i)
+
+instance Reifies s (VarArr x) => Bounded (VarW x s) where
+  minBound = varAt 0
+  maxBound =
+    let VarArr a = reflect (Proxy :: Proxy s)
+     in varAt (snd (bounds a))
+
+-- | Indices are ranked by position, so every 'Ix' operation is O(1) integer
+-- arithmetic.
+instance Reifies s (VarArr x) => Ix (VarW x s) where
+  range (VarW lo _, VarW hi _) = map varAt [lo .. hi]
+  index (VarW lo _, _) (VarW i _) = i - lo
+  inRange (VarW lo _, VarW hi _) (VarW i _) = lo <= i && i <= hi
 
 -- | Solve @x = A x + b@ for a whole collection of right-hand sides @b@ at once.
 --
@@ -64,40 +88,34 @@ solveMany ::
   => Coeffs x
   -> t (Vec x)
   -> Maybe (t (Vec x))
-solveMany rows bs = reify (Bounds 0 (Set.size vars - 1)) f
+solveMany rows bs = reify (VarArr varArr) f
   where
     vars :: Set.Set x
     vars = Set.fromList (concatMap toList rows) <> foldMap M.keysSet bs
-    indexMap :: M.Map x Int
-    indexMap = M.fromList (zip (Set.toList vars) [0 ..])
-    indexRMap :: M.Map Int x
-    indexRMap = M.fromList (zip [0 ..] (Set.toList vars))
-    -- Row i of A as a sparse map @j -> coefficient@. Every variable has (at
-    -- most) one row; a variable with no row is an all-zero row, i.e. @x = b_x@.
-    coeffMap :: M.Map Int (M.Map Int Rational)
+    -- The variables in order as an array.
+    varArr :: Array Int x
+    varArr = listArray (0, Set.size vars - 1) (Set.toAscList vars)
+    -- The coefficient as a sparse map.
+    coeffMap :: M.Map (x, x) Rational
     coeffMap =
-      M.fromListWith (M.unionWith (+))
-        [ (indexMap M.! x, M.fromListWith (+) [(indexMap M.! y, c) | Term c y <- tms])
-        | Row x tms <- rows
-        ]
-    f :: forall s. Reifies s (Bounds Int)
+      M.fromListWith (+)
+        [ ((x, y), c) | Row x tms <- rows, Term c y <- tms ]
+    f :: forall s. Reifies s (VarArr x)
       => Proxy s
       -> Maybe (t (Vec x))
     f _ = traverse extract (solveAffineMany a bsVec)
       where
-        a :: Matrix (BoundedW Int s) Rational
+        a :: Matrix (VarW x s) Rational
         a =
-          matrixFromFunc $ \(BoundedW i, BoundedW j) ->
-            M.findWithDefault 0 j (M.findWithDefault M.empty i coeffMap)
-        bsVec :: t (Vector (BoundedW Int s) Rational)
+          matrixFromFunc $ \(VarW _ x, VarW _ y) ->
+            M.findWithDefault 0 (x, y) coeffMap
+        bsVec :: t (Vector (VarW x s) Rational)
         bsVec = fmap toVec bs
           where
-            toVec b =
-              let bInt = M.mapKeys (indexMap M.!) b
-               in vectorFromFunc $ \(BoundedW i) -> M.findWithDefault 0 i bInt
-        extract :: Vector (BoundedW Int s) (Compact Rational) -> Maybe (Vec x)
+            toVec b = vectorFromFunc $ \(VarW _ x) -> M.findWithDefault 0 x b
+        extract :: Vector (VarW x s) (Compact Rational) -> Maybe (Vec x)
         extract (Vector arr) =
           M.filter (/= 0) . M.fromList <$>
           traverse
-            (\(BoundedW i, c) -> (indexRMap M.! i, ) <$> extractCompact c)
+            (\(VarW _ x, c) -> (x, ) <$> extractCompact c)
             (assocs arr)
