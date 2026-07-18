@@ -4,7 +4,6 @@ module Main
   ) where
 
 import Data.Foldable
-import Data.Semigroup ((<>))
 import Options.Applicative
 import Prob.Parse
 import Prob.Pretty

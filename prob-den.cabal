@@ -1,0 +1,65 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.31.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: aa1deab4ca2d9ca16207cde1d0ddbb31965191e8d4404d2d9f732e3aa78bc883
+
+name:           prob-den
+version:        0.1.0.0
+description:    Exploration of denotation of probabilistic programs
+author:         Joe Qian
+maintainer:     qzy@g.ucla.edu
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+
+library
+  hs-source-dirs:
+      src
+  ghc-options: -Wall -O2
+  build-depends:
+      array
+    , base
+    , containers >=0.5.11
+    , megaparsec >=7.0.0
+    , mtl
+    , mwc-random
+    , parser-combinators >=1.0.0
+    , reflection
+    , text
+    , transformers
+  exposed-modules:
+      Prob.CoreAST
+      Prob.Den
+      Prob.Eval
+      Prob.LinearEq
+      Prob.Matrix
+      Prob.Parse
+      Prob.Pretty
+  other-modules:
+      Paths_prob_den
+  default-language: Haskell2010
+
+executable prob
+  main-is: Main.hs
+  other-modules:
+      Paths_prob_den
+  hs-source-dirs:
+      main
+  ghc-options: -Wall -O2
+  build-depends:
+      array
+    , base
+    , containers >=0.5.11
+    , megaparsec >=7.0.0
+    , mtl
+    , mwc-random
+    , optparse-applicative
+    , parser-combinators >=1.0.0
+    , prob-den
+    , reflection
+    , text
+    , transformers
+  default-language: Haskell2010

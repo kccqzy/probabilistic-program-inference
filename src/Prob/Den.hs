@@ -15,6 +15,7 @@ module Prob.Den
   , runDenStmt
   ) where
 
+import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.Bifunctor

@@ -23,23 +23,19 @@ Their meaning will become clear in the following examples.
 
 ## Running the Tool
 
-If you wish to compile from source, have [the Haskell `stack`
-tool](http://haskellstack.org) ready. It is a program for developing
-Haskell projects, with automated compiler installation and dependency
-installation. Then, run `stack build` in the root directory of the repo.
-
-If you do not wish to compile, download a pre-compiled executable from
-the [GitHub release
-page](https://github.com/kccqzy/probabilistic-program-inference/releases/tag/v1.0).
-
-Finally, run
+Make sure you have a recent GHC and cabal installation. Then run
 
 ```
-stack exec -- prob /path/to/program.txt
+cabal new-run prob -- --infer /path/to/program.txt
 ```
 
 to perform inference on a probabilistic program contained in
 the mentioned file.
+
+If you do not wish to compile, download a pre-compiled executable from
+the [GitHub release
+page](https://github.com/kccqzy/probabilistic-program-inference/releases/tag/v1.0).
+Releases are cut infrequently.
 
 ## Example Programs
 

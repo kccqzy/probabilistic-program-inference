@@ -3,7 +3,6 @@
 -- | Matrices as star semirings
 module Prob.Matrix where
 
-import Control.Applicative
 import Data.Array
 
 -- | Alexandroff one-point compactification.

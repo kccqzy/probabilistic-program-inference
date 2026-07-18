@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
 module Prob.Eval
   ( runE
   , runEs
@@ -9,13 +10,14 @@ module Prob.Eval
   , tally
   ) where
 
-import Control.Applicative
 import Control.Monad.ST
 import Control.Monad.State
 import Control.Monad.Trans.Maybe
 import Data.Bifunctor
 import Data.List
+import qualified Data.List.NonEmpty as NE
 import Data.Maybe
+import Control.Monad
 import Data.Ratio
 import qualified Data.Set as Set
 import Prob.CoreAST
@@ -32,11 +34,11 @@ type ProgState vt s = (Sigma vt, Gen s)
 -- | The evaluation monad.
 type Eval vt s = MaybeT (StateT (ProgState vt s) (ST s))
 
-runE :: Eval vt s a -> IO (Maybe a)
-runE e = withSystemRandom . asGenST $ (\rng -> evalStateT (runMaybeT e) (Set.empty, rng))
+runE :: (forall s. Eval vt s a) -> IO (Maybe a)
+runE e = withSystemRandomST $ \rng -> evalStateT (runMaybeT e) (Set.empty, rng)
 
-runEs :: Int -> Eval vt s a -> IO [a]
-runEs t e = withSystemRandom . asGenST $ (\rng -> catMaybes <$> evalStateT (replicateM t (runMaybeT e)) (Set.empty, rng))
+runEs :: Int -> (forall s. Eval vt s a) -> IO [a]
+runEs t e = withSystemRandomST $ \rng -> catMaybes <$> evalStateT (replicateM t (runMaybeT e)) (Set.empty, rng)
 
 evalExpr :: (Show vt, Ord vt) => Expr vt -> Eval vt s Bool
 evalExpr (Var x) = gets (Set.member x . fst)
@@ -86,7 +88,7 @@ evalProg (ReturnAll stmt) = evalStmt stmt >> gets fst
 -- Utilities
 --------------------------------------------------------------------------------
 tally :: Ord a => [a] -> [(a, Int)]
-tally = map (liftA2 (,) head length) . group . sort
+tally = map (liftA2 (,) NE.head length) . NE.group . sort
 
 renormalize :: [(a, Int)] -> [(a, Rational)]
 renormalize l = fmap (fmap (\n -> fromIntegral n % fromIntegral tot)) l
