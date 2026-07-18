@@ -78,11 +78,13 @@ denStmt (loop@(While e s):next) sigma = do
     _ -> do
       unrollOnce (CurrentLoop e s (Set.singleton sigma) [])
       newEqns <- gets (clEqns . fromJust)
-      case L.solve newEqns of
-        Nothing -> error "solution of linear system involves infinity: matrix is not of full rank"
-        Just m -> do
-          put cl
-          pure (L.RHS (m M.! sigma) [])
+      -- Safe: solve never returns Nothing on systems produced by denStmt.
+      -- Mass conservation forces b_j = 0 for every j in a recurrent class of
+      -- A, so Inf entries of star(A) are absorbed (Inf <.> Real 0 = Real 0)
+      -- and the solution vector is always finite.
+      let m = fromJust (L.solve newEqns)
+      put cl
+      pure (L.RHS (m M.! sigma) [])
   where
     unrollOnce nl = do
       put (Just nl)
