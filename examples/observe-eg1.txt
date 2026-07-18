@@ -1,0 +1,2 @@
+a ~ bernoulli 0.5;
+observe a;

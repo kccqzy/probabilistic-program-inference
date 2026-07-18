@@ -1,0 +1,5 @@
+x ~ bernoulli 0.05;
+while x do {
+    y ~ bernoulli 0.25;
+    x ~ bernoulli 0.05;
+}

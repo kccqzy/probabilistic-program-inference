@@ -1,0 +1,20 @@
+timesBit0 := false;
+timesBit1 := false;
+timesBit2 := false;
+overflow := false;
+
+do {
+  coin ~ bernoulli 0.5;
+  if not timesBit0 then {
+    timesBit0 := true;
+  } else if not timesBit1 then {
+      timesBit1 := true;
+      timesBit0 := false;
+  } else if not timesBit2 then {
+      timesBit2 := true;
+      timesBit0 := false;
+      timesBit1 := false;
+  } else {
+      overflow := true;
+  }
+} while coin;

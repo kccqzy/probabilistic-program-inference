@@ -1,0 +1,6 @@
+a ~ bernoulli 0.5;
+if a then {
+  skip
+} else {
+  observe false;
+}
