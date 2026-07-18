@@ -1,4 +1,3 @@
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -10,7 +9,7 @@ module Prob.LinearEq
   , Row(..)
   , Coeffs
   , Vec
-  , solveMany
+  , solveRow
   ) where
 
 import Data.Array
@@ -26,9 +25,8 @@ data Term x = Term Rational x deriving (Show, Functor, Foldable, Traversable)
 
 -- | One row of the coefficient matrix @A@ of a system @x = A x + b@: the
 -- variable the row defines, together with its linear combination of variables.
--- The constant @b@ is deliberately /not/ stored here — it is supplied
--- separately, and in bulk, to 'solveMany'. Keeping @A@ apart from the
--- right-hand sides allows a single factorization to serve many @b@s.
+-- The constant @b@ is deliberately /not/ stored here — the constant columns
+-- are supplied separately, per variable, to 'solveRow'.
 data Row x = Row x [Term x] deriving (Show, Functor, Foldable, Traversable)
 
 -- | The coefficient matrix @A@ of a system @x = A x + b@, one 'Row' per
@@ -72,50 +70,57 @@ instance Reifies s (VarArr x) => Ix (VarW x s) where
   index (VarW lo _, _) (VarW i _) = i - lo
   inRange (VarW lo _, VarW hi _) (VarW i _) = lo <= i && i <= hi
 
--- | Solve @x = A x + b@ for a whole collection of right-hand sides @b@ at once.
+-- | Compute the @target@ coordinate of the solutions of @x = A x + b@ for a
+-- whole collection of constant columns @b@ at once — supplied not as (dense)
+-- columns but as a sparse map, as @[(st, b_st)]@ where @b_st@ maps each column
+-- label @k@ to that column's constant for variable @st@. Notice that given that
+-- @target@ coordinate, we essentially want @e_target^T x@.
 --
--- This is the standard "same factorization, many right-hand sides" primitive,
--- specialized to the star-semiring solver: the expensive part, @star A@, depends
--- only on the coefficient matrix, so 'solveAffineMany' computes it once and
--- reuses it for every column @b@. The columns live in an arbitrary traversable
--- @t@ — the labelling of the right-hand sides is the caller's concern, not this
--- module's.
---
--- Returns 'Nothing' exactly when some column diverges — an @Inf@ entry of
--- @star A@ meeting nonzero mass, detected coordinate-wise by 'extractCompact'.
-solveMany ::
-     forall t x. (Ord x, Traversable t)
+-- Internally, for performance reasons, this solves a different system, namely
+-- @y = A^T y + e_target@, so @y = (A^T)* e_target@ and @y^T = e_target^T A*@.
+-- So the final result is also written as @e_target^T x = y^T b@. This is more
+-- performant than solving the original system.
+solveRow ::
+     forall x k. (Ord x, Ord k)
   => Coeffs x
-  -> t (Vec x)
-  -> Maybe (t (Vec x))
-solveMany rows bs = reify (VarArr varArr) f
+  -> x
+  -> [(x, Vec k)]
+  -> Maybe (Vec k)
+solveRow rows target bs = reify (VarArr varArr) f
   where
     vars :: Set.Set x
-    vars = Set.fromList (concatMap toList rows) <> foldMap M.keysSet bs
+    vars = Set.insert target (Set.fromList (concatMap toList rows))
     -- The variables in order as an array.
     varArr :: Array Int x
     varArr = listArray (0, Set.size vars - 1) (Set.toAscList vars)
-    -- The coefficient as a sparse map.
-    coeffMap :: M.Map (x, x) Rational
-    coeffMap =
+    -- The transposed coefficients as a sparse map.
+    coeffMapT :: M.Map (x, x) Rational
+    coeffMapT =
       M.fromListWith (+)
-        [ ((x, y), c) | Row x tms <- rows, Term c y <- tms ]
+        [ ((j, i), c) | Row i tms <- rows, Term c j <- tms ]
     f :: forall s. Reifies s (VarArr x)
       => Proxy s
-      -> Maybe (t (Vec x))
-    f _ = traverse extract (solveAffineMany a bsVec)
+      -> Maybe (Vec k)
+    f _ = combine (solveAffine a b)
       where
         a :: Matrix (VarW x s) Rational
         a =
           matrixFromFunc $ \(VarW _ x, VarW _ y) ->
-            M.findWithDefault 0 (x, y) coeffMap
-        bsVec :: t (Vector (VarW x s) Rational)
-        bsVec = fmap toVec bs
+            M.findWithDefault 0 (x, y) coeffMapT
+        b :: Vector (VarW x s) Rational
+        b = vectorFromFunc $ \(VarW _ x) -> if x == target then 1 else 0
+        combine :: Vector (VarW x s) (Compact Rational) -> Maybe (Vec k)
+        combine (Vector arr) =
+          fmap (M.filter (/= 0)) $
+          traverse extractCompact $
+          M.fromListWith (<+>)
+            [ (k, y <.> Real mass)
+            | (st, bst) <- bs
+            -- y is the specific row in the solution corresponding to st
+            , let y = M.findWithDefault (Real 0) st yMap
+            , (k, mass) <- M.toList bst
+            ]
           where
-            toVec b = vectorFromFunc $ \(VarW _ x) -> M.findWithDefault 0 x b
-        extract :: Vector (VarW x s) (Compact Rational) -> Maybe (Vec x)
-        extract (Vector arr) =
-          M.filter (/= 0) . M.fromList <$>
-          traverse
-            (\(VarW _ x, c) -> (x, ) <$> extractCompact c)
-            (assocs arr)
+            -- The y vector (solution) converted to Map form.
+            yMap :: M.Map x (Compact Rational)
+            yMap = M.fromList [(v, c) | (VarW _ v, c) <- assocs arr]

@@ -52,7 +52,7 @@ type Den vt = State (Maybe (CurrentLoop vt))
 
 -- | The denotation of a statement list: an (unnormalized) distribution over
 -- ending states, plus — while inside a loop — symbolic references to loop states
--- (the 'L.Term's) that 'L.solveMany' later resolves. At the top level the
+-- (the 'L.Term's) that 'L.solveRow' later resolves. At the top level the
 -- reference list is empty and a 'Ret' is just a 'Distr'.
 data Ret vt = Ret (Distr (Sigma vt)) [L.Term (Sigma vt)]
 
@@ -86,17 +86,15 @@ denStmt (loop@(While e s):next) sigma = do
     _ -> do
       unrollOnce (CurrentLoop e s (Set.singleton sigma) [])
       newEqns <- gets (clEqns . fromJust)
-      -- The coefficient matrix A (the 'L.Term's) depends only on the program,
-      -- while the exit distribution differs per loop state. Regroup those exit
-      -- distributions into one right-hand-side column per ending state and solve
-      -- them all against the single factorization of A (see 'L.solveMany').
-      -- Safe fromJust: mass conservation keeps every column finite.
+      -- We do not have to solve the entire system x=Ax+b. We only need the row
+      -- corresponding to sigma. The 'L.solveRow' does this by not solving the
+      -- entire system, and combines that row with the per-state exit
+      -- distributions. Safe fromJust: 'L.solveRow' returns Nothing only if a
+      -- divergent (recurrent) state carries exit mass, which mass conservation
+      -- rules out (see TODOs/TODO-proof.txt).
       let coeffs = [L.Row st tms | (st, Ret _ tms) <- newEqns]
-          exitColumns = transposeExit [(st, d) | (st, Ret d _) <- newEqns]
-          solution = fromJust (L.solveMany coeffs exitColumns)
-          -- The exit distribution for the loop's entry state is that state's
-          -- coordinate across every column.
-          exitDist = M.map (M.findWithDefault 0 sigma) solution
+          exits = [(st, d) | (st, Ret d _) <- newEqns]
+          exitDist = fromJust (L.solveRow coeffs sigma exits)
       put cl
       pure (Ret exitDist [])
   where
@@ -104,17 +102,6 @@ denStmt (loop@(While e s):next) sigma = do
       put (Just nl)
       r <- denStmt (If e (s ++ [loop]) [] : next) sigma
       modify (fmap (\c -> c { clEqns = (sigma, r) : clEqns c }))
-
--- | Regroup per-state loop exit distributions into per-ending-state right-hand-side
--- columns: from @[(loopState, ending -> mass)]@ to @ending -> (loopState ->
--- mass)@, i.e. the columns @B@ that 'L.solveMany' consumes.
-transposeExit :: Ord vt => [(Sigma vt, Distr (Sigma vt))] -> M.Map (Sigma vt) (L.Vec (Sigma vt))
-transposeExit rows =
-  M.fromListWith (M.unionWith (+))
-    [ (ending, M.singleton st w)
-    | (st, d) <- rows
-    , (ending, w) <- M.toList d
-    ]
 
 runDenStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Distr (Sigma vt)
 runDenStmt stmts sigma = extractDist (evalState (denStmt stmts sigma) Nothing)
