@@ -1,0 +1,9 @@
+------------------------------------------------------------------------------  -------
+"coin" -> false "timesBit0" -> false "timesBit1" -> false "timesBit2" -> false  1/255
+"coin" -> false "timesBit0" ->  true "timesBit1" ->  true "timesBit2" ->  true  2/255
+"coin" -> false "timesBit0" -> false "timesBit1" ->  true "timesBit2" ->  true  4/255
+"coin" -> false "timesBit0" ->  true "timesBit1" -> false "timesBit2" ->  true  8/255
+"coin" -> false "timesBit0" -> false "timesBit1" -> false "timesBit2" ->  true  16/255
+"coin" -> false "timesBit0" ->  true "timesBit1" ->  true "timesBit2" -> false  32/255
+"coin" -> false "timesBit0" -> false "timesBit1" ->  true "timesBit2" -> false  64/255
+"coin" -> false "timesBit0" ->  true "timesBit1" -> false "timesBit2" -> false  128/255

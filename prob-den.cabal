@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.31.2.
+-- This file has been generated from package.yaml by hpack version 0.39.6.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: aa1deab4ca2d9ca16207cde1d0ddbb31965191e8d4404d2d9f732e3aa78bc883
+-- hash: "\RS\215\193\178lSdz\GS\167\b\137\DEL\NAK\177\204w\227l\204^\156\135\143\231\215\164I3\253\222\169"
 
 name:           prob-den
 version:        0.1.0.0
@@ -57,6 +57,29 @@ executable prob
     , mtl
     , mwc-random
     , optparse-applicative
+    , parser-combinators >=1.0.0
+    , prob-den
+    , reflection
+    , text
+    , transformers
+  default-language: Haskell2010
+
+test-suite linear-eq-test
+  type: exitcode-stdio-1.0
+  main-is: LinearEqTest.hs
+  other-modules:
+      Paths_prob_den
+  hs-source-dirs:
+      test
+  ghc-options: -Wall -O2
+  build-depends:
+      QuickCheck
+    , array
+    , base
+    , containers >=0.5.11
+    , megaparsec >=7.0.0
+    , mtl
+    , mwc-random
     , parser-combinators >=1.0.0
     , prob-den
     , reflection

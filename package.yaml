@@ -28,3 +28,11 @@ executables:
       - base
       - optparse-applicative
       - prob-den
+
+tests:
+  linear-eq-test:
+    main: LinearEqTest.hs
+    source-dirs: test
+    dependencies:
+      - QuickCheck
+      - prob-den

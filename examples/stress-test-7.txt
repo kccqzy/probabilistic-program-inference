@@ -1,0 +1,50 @@
+timesBit0 := false;
+timesBit1 := false;
+timesBit2 := false;
+timesBit3 := false;
+timesBit4 := false;
+timesBit5 := false;
+timesBit6 := false;
+overflow := false;
+
+do {
+  coin ~ bernoulli 0.5;
+  if not timesBit0 then {
+    timesBit0 := true;
+  } else if not timesBit1 then {
+      timesBit1 := true;
+      timesBit0 := false;
+  } else if not timesBit2 then {
+      timesBit2 := true;
+      timesBit0 := false;
+      timesBit1 := false;
+  } else if not timesBit3 then {
+      timesBit3 := true;
+      timesBit0 := false;
+      timesBit1 := false;
+      timesBit2 := false;
+  } else if not timesBit4 then {
+      timesBit4 := true;
+      timesBit0 := false;
+      timesBit1 := false;
+      timesBit2 := false;
+      timesBit3 := false;
+  } else if not timesBit5 then {
+      timesBit5 := true;
+      timesBit0 := false;
+      timesBit1 := false;
+      timesBit2 := false;
+      timesBit3 := false;
+      timesBit4 := false;
+  } else if not timesBit6 then {
+      timesBit6 := true;
+      timesBit0 := false;
+      timesBit1 := false;
+      timesBit2 := false;
+      timesBit3 := false;
+      timesBit4 := false;
+      timesBit5 := false;
+  } else {
+      overflow := true;
+  }
+} while coin;
