@@ -1,0 +1,8 @@
+p := false;
+do {
+  do {
+    innerCoin ~ bernoulli 0.5;
+    p := p xor innerCoin;
+  } while innerCoin;
+  outerCoin ~ bernoulli 0.5;
+} while outerCoin;

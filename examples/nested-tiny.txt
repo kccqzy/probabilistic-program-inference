@@ -1,0 +1,6 @@
+do {
+  do {
+    c ~ bernoulli 0.5;
+  } while c;
+  d ~ bernoulli 0.5;
+} while d;

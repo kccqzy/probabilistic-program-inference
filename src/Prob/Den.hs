@@ -17,6 +17,7 @@ module Prob.Den
 import Control.Monad
 import Control.Monad.State
 import Data.Bifunctor
+import Data.Foldable
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Set as Set
@@ -100,11 +101,13 @@ denStmt (loop@(While lbl e s):next) sigma = do
           exits = [(st, d) | (st, Ret d _) <- newEqns]
           exitDist = fromJust (L.solveRow coeffs sigma exits)
       put cl
-      pure (Ret exitDist [])
+      rets <-
+        traverse (\(eps, w) -> scaleRet w <$> denStmt next eps) (M.toList exitDist)
+      pure (foldl' plusRet (Ret M.empty []) rets)
   where
     unrollOnce nl = do
       put (Just nl)
-      r <- denStmt (If e (s ++ [loop]) [] : next) sigma
+      r <- denStmt [If e (s ++ [loop]) []] sigma
       modify (fmap (\c -> c { clEqns = (sigma, r) : clEqns c }))
 
 runDenStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Distr (Sigma vt)
