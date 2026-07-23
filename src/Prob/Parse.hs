@@ -73,18 +73,20 @@ ifStmt = do
 whileStmt :: Parser [Stmt]
 whileStmt = do
   keyword "while"
+  offset <- getOffset
   cond <- expr
   keyword "do"
   body <- braces stmt
-  pure [Core.While cond body]
+  pure [Core.While offset cond body]
 
 doWhileStmt :: Parser [Stmt]
 doWhileStmt = do
   keyword "do"
   body <- braces stmt
   keyword "while"
+  offset <- getOffset
   cond <- expr
-  pure (body ++ [Core.While cond body])
+  pure (body ++ [Core.While offset cond body])
 
 assignStmt :: Parser [Stmt]
 assignStmt = do

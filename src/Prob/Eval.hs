@@ -74,7 +74,7 @@ evalStmt (If e thenn alt:next) = do
     then evalStmt thenn
     else evalStmt alt
   evalStmt next
-evalStmt s@(While e stmt:next) = do
+evalStmt s@(While _ e stmt:next) = do
   e' <- evalExpr e
   if e'
     then evalStmt stmt >> evalStmt s

@@ -47,7 +47,8 @@ data Stmt varTy
   | If (Expr varTy)
        [Stmt varTy]
        [Stmt varTy]
-  | While (Expr varTy)
+  | While Int -- The Int here is a loop label.
+          (Expr varTy)
           [Stmt varTy]
   deriving (Show, Eq, Functor, Foldable, Traversable)
 

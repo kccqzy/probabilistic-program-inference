@@ -1,0 +1,19 @@
+// Two syntactically identical loops in sequence. Each loop flips p a
+// Geometric(1/2)-distributed number of times (n >= 1, P(n odd) = 2/3), so the
+// final p is the parity of the sum of two independent such counts:
+// P(p = false) = (2/3)^2 + (1/3)^2 = 5/9, P(p = true) = 4/9.
+//
+// This exercises the loop-identity machinery: the two loops are structurally
+// equal but must NOT be identified with each other (they are distinct
+// syntactic occurrences with distinct labels).
+p := false;
+
+do {
+  coin ~ bernoulli 0.5;
+  p := not p;
+} while coin;
+
+do {
+  coin ~ bernoulli 0.5;
+  p := not p;
+} while coin;

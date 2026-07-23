@@ -41,9 +41,13 @@ denExpr (And a b) sigma = denExpr a sigma && denExpr b sigma
 denExpr (Xor a b) sigma = denExpr a sigma /= denExpr b sigma
 denExpr (Not a) sigma = not (denExpr a sigma)
 
+-- | The loop currently being unrolled, identified by its label: the source
+-- offset of the loop's @while@ keyword, assigned by the parser. Distinct
+-- source loops therefore always have distinct labels, while the body copies a
+-- do-while desugars into share the label of their single @while@ keyword —
+-- which is sound.
 data CurrentLoop vt = CurrentLoop
-  { clGuard :: Expr vt
-  , clBody :: [Stmt vt]
+  { clLabel :: Int
   , clSeenSigma :: Set.Set (Sigma vt)
   , clEqns :: [(Sigma vt, Ret vt)]
   }
@@ -75,16 +79,16 @@ denStmt (If e s1 s2:next) sigma
 denStmt (Observe e:next) sigma -- requires renormalization at the end
   | denExpr e sigma = denStmt next sigma
   | otherwise = pure (Ret M.empty [])
-denStmt (loop@(While e s):next) sigma = do
+denStmt (loop@(While lbl e s):next) sigma = do
   cl <- get
   case cl of
     Just CurrentLoop {..}
-      | clGuard == e && clBody == s -> do
+      | clLabel == lbl -> do
         when (sigma `Set.notMember` clSeenSigma) $
-          unrollOnce (CurrentLoop clGuard clBody (Set.insert sigma clSeenSigma) clEqns)
+          unrollOnce (CurrentLoop clLabel (Set.insert sigma clSeenSigma) clEqns)
         pure (Ret M.empty [L.Term 1 sigma])
     _ -> do
-      unrollOnce (CurrentLoop e s (Set.singleton sigma) [])
+      unrollOnce (CurrentLoop lbl (Set.singleton sigma) [])
       newEqns <- gets (clEqns . fromJust)
       -- We do not have to solve the entire system x=Ax+b. We only need the row
       -- corresponding to sigma. The 'L.solveRow' does this by not solving the
