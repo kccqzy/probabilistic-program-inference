@@ -1,0 +1,5 @@
+------------------------------------------------------  ---
+"flip" ->  true "x" -> false "y" ->  true "z" -> false  1/8
+"flip" ->  true "x" -> false "y" ->  true "z" ->  true  1/8
+"flip" -> false "x" -> false "y" -> false "z" -> false  3/8
+"flip" -> false "x" -> false "y" -> false "z" ->  true  3/8

@@ -1,0 +1,15 @@
+// Random variables before the loop that are irrelevant to the loop itself but
+// are used AFTER the loop, in an observation that also involves a
+// loop-computed variable. Exercises carrying untouched variables through the
+// loop and recombining them with the loop's result.
+z1 ~ bernoulli 0.5;
+z2 ~ bernoulli 0.5;
+
+parity := false;
+
+do {
+  coin ~ bernoulli 0.5;
+  parity := not parity;
+} while coin;
+
+observe z1 or parity;

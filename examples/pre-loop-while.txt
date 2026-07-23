@@ -1,0 +1,12 @@
+// A while-loop (not do-while) whose guard is a pre-loop random variable, so
+// the loop may run zero times, plus an irrelevant variable. When g starts
+// false the loop body never executes and k stays false.
+z ~ bernoulli 0.5;
+g ~ bernoulli 0.5;
+
+k := false;
+
+while g do {
+  k := not k;
+  g ~ bernoulli 0.5;
+}

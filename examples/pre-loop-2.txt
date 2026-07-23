@@ -1,0 +1,15 @@
+// A random variable chosen before the loop that the loop READS but never
+// writes: the coin's bias depends on it. The loop's exit distribution is
+// genuinely different for each value of bias.
+bias ~ bernoulli 0.5;
+
+parity := false;
+
+do {
+  if bias then {
+    coin ~ bernoulli 0.75;
+  } else {
+    coin ~ bernoulli 0.25;
+  };
+  parity := not parity;
+} while coin;

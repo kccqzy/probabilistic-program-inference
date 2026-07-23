@@ -1,0 +1,13 @@
+// An irrelevant random variable before a loop that diverges for some values of
+// a RELEVANT pre-loop variable: if x is true the loop never terminates, so the
+// results must be conditioned on x being false, while z stays fair and
+// independent.
+z ~ bernoulli 0.5;
+x ~ bernoulli 0.05;
+
+flip := false;
+
+do {
+  y ~ bernoulli 0.25;
+  flip := flip xor y;
+} while x;

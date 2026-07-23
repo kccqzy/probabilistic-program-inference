@@ -1,0 +1,15 @@
+// An irrelevant random variable before NESTED loops. The inner loop's
+// accumulator feeds the outer loop's accumulator.
+z ~ bernoulli 0.5;
+
+innerParity := false;
+outerParity := false;
+
+do {
+  do {
+    innerCoin ~ bernoulli 0.5;
+    innerParity := innerParity xor innerCoin;
+  } while innerCoin;
+  outerParity := outerParity xor innerParity;
+  outerCoin ~ bernoulli 0.5;
+} while outerCoin;

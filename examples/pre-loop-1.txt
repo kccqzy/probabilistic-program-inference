@@ -1,0 +1,20 @@
+// Random variables that are irrelevant to the loop, followed by a loop with a
+// two-bit counter in its body. The distribution of (z1, z2) must be
+// independent of the counter's geometric distribution.
+z1 ~ bernoulli 0.5;
+z2 ~ bernoulli 0.3;
+
+c0 := false;
+c1 := false;
+
+do {
+  coin ~ bernoulli 0.5;
+  if not c0 then {
+    c0 := true;
+  } else if not c1 then {
+    c1 := true;
+    c0 := false;
+  } else {
+    skip;
+  }
+} while coin;
