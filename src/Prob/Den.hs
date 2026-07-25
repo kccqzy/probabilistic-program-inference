@@ -18,6 +18,7 @@ import Control.Monad
 import Control.Monad.State
 import Data.Bifunctor
 import Data.Foldable
+import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Set as Set
@@ -46,14 +47,27 @@ denExpr (Not a) sigma = not (denExpr a sigma)
 -- offset of the loop's @while@ keyword, assigned by the parser. Distinct
 -- source loops therefore always have distinct labels, while the body copies a
 -- do-while desugars into share the label of their single @while@ keyword —
--- which is sound.
+-- which is sound, and desirable for kernel-cache sharing because
+-- label-equal 'While' nodes are structurally identical and the loop kernel is
+-- solved independently of what follows the loop.
 data CurrentLoop vt = CurrentLoop
   { clLabel :: Int
   , clSeenSigma :: Set.Set (Sigma vt)
   , clEqns :: [(Sigma vt, Ret vt)]
   }
 
-type Den vt = State (Maybe (CurrentLoop vt))
+-- | The state threaded through the denotation: the loop currently being
+-- unrolled (if any), the footprint of every loop in the program, and the
+-- cache of already-solved loop kernels. Only 'dsCurrentLoop' is saved
+-- and restored around a loop solve; the footprints and the kernel cache
+-- only ever grows.
+data DenState vt = DenState
+  { dsCurrentLoop :: Maybe (CurrentLoop vt)
+  , dsFootprints :: IM.IntMap (Set.Set vt)
+  , dsKernels :: M.Map (Int, Sigma vt) (Distr (Sigma vt))
+  }
+
+type Den vt = State (DenState vt)
 
 -- | The denotation of a statement list: an (unnormalized) distribution over
 -- ending states, plus — while inside a loop — symbolic references to loop states
@@ -81,37 +95,73 @@ denStmt (Observe e:next) sigma -- requires renormalization at the end
   | denExpr e sigma = denStmt next sigma
   | otherwise = pure (Ret M.empty [])
 denStmt (loop@(While lbl e s):next) sigma = do
-  cl <- get
+  cl <- gets dsCurrentLoop
   case cl of
     Just CurrentLoop {..}
       | clLabel == lbl -> do
         when (sigma `Set.notMember` clSeenSigma) $
-          unrollOnce (CurrentLoop clLabel (Set.insert sigma clSeenSigma) clEqns)
+          unrollOnce sigma (CurrentLoop clLabel (Set.insert sigma clSeenSigma) clEqns)
         pure (Ret M.empty [L.Term 1 sigma])
     _ -> do
-      unrollOnce (CurrentLoop lbl (Set.singleton sigma) [])
-      newEqns <- gets (clEqns . fromJust)
-      -- We do not have to solve the entire system x=Ax+b. We only need the row
-      -- corresponding to sigma. The 'L.solveRow' does this by not solving the
-      -- entire system, and combines that row with the per-state exit
-      -- distributions. Safe fromJust: 'L.solveRow' returns Nothing only if a
-      -- divergent (recurrent) state carries exit mass, which mass conservation
-      -- rules out (see TODOs/TODO-proof.txt).
-      let coeffs = [L.Row st tms | (st, Ret _ tms) <- newEqns]
-          exits = [(st, d) | (st, Ret d _) <- newEqns]
-          exitDist = fromJust (L.solveRow coeffs sigma exits)
-      put cl
+      -- The loop's dynamics depend only on the variables its guard and
+      -- body mention (the footprint). We first compute (with cache) the
+      -- footprint. Then we split sigma into relevant sigma and
+      -- irrelevant sigma. The relevant sigma then becomes a cache key
+      -- for this loop so we don't have to solve again if only irrelevant
+      -- sigma had changed.
+      cachedFp <- gets (IM.lookup lbl . dsFootprints)
+      fp <- case cachedFp of
+          Just fp -> pure fp
+          _ -> do
+            let fp = Set.fromList (toList e ++ concatMap toList s)
+            modify (\ds -> ds { dsFootprints = IM.insert lbl fp (dsFootprints ds) })
+            pure fp
+      let sigmaRelevant = Set.intersection sigma fp
+          sigmaIrrelevant = Set.difference sigma fp
+      cached <- gets (M.lookup (lbl, sigmaRelevant) . dsKernels)
+      kernel <- case cached of
+          Just k -> pure k
+          Nothing -> do
+            unrollOnce sigmaRelevant (CurrentLoop lbl (Set.singleton sigmaRelevant) [])
+            newEqns <- gets (clEqns . fromJust . dsCurrentLoop)
+            -- We do not have to solve the entire system x=Ax+b. We only need
+            -- the row corresponding to sigmaRelevant. The 'L.solveRow' does this by
+            -- not solving the entire system, and combines that row with the
+            -- per-state exit distributions. Safe fromJust: 'L.solveRow'
+            -- returns Nothing only if a divergent (recurrent) state carries
+            -- exit mass, which mass conservation rules out (see
+            -- TODOs/TODO-proof.txt).
+            let coeffs = [L.Row st tms | (st, Ret _ tms) <- newEqns]
+                exits = [(st, d) | (st, Ret d _) <- newEqns]
+                k = fromJust (L.solveRow coeffs sigmaRelevant exits)
+            modify
+              (\ds ->
+                 ds
+                   { dsCurrentLoop = cl
+                   , dsKernels = M.insert (lbl, sigmaRelevant) k (dsKernels ds)
+                   })
+            pure k
       rets <-
-        traverse (\(eps, w) -> scaleRet w <$> denStmt next eps) (M.toList exitDist)
+        traverse
+          (\(eps, w) -> scaleRet w <$> denStmt next (eps `Set.union` sigmaIrrelevant))
+          (M.toList kernel)
       pure (foldl' plusRet (Ret M.empty []) rets)
   where
-    unrollOnce nl = do
-      put (Just nl)
-      r <- denStmt [If e (s ++ [loop]) []] sigma
-      modify (fmap (\c -> c { clEqns = (sigma, r) : clEqns c }))
+    unrollOnce loopSigma nl = do
+      modify (\ds -> ds {dsCurrentLoop = Just nl})
+      r <- denStmt [If e (s ++ [loop]) []] loopSigma
+      modify
+        (\ds ->
+           ds { dsCurrentLoop =
+                 fmap (\c -> c {clEqns = (loopSigma, r) : clEqns c}) (dsCurrentLoop ds)
+              })
 
 runDenStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Distr (Sigma vt)
-runDenStmt stmts sigma = extractDist (evalState (denStmt stmts sigma) Nothing)
+runDenStmt stmts sigma =
+  extractDist
+    (evalState
+       (denStmt stmts sigma)
+       (DenState Nothing IM.empty M.empty))
 
 -- | Run a denotation from the initial state, in which all variables are
 -- @False@. With the distribution-valued 'denStmt', the answer is the entire

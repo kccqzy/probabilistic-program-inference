@@ -411,5 +411,6 @@ to the properties of the language, program states will re-occur.
 Furthermore, the probabilities of the various possible program states in
 a loop are *linear*. This results in a linear system of at most 2^N
 variables (in the program state), where *N* is the number of variables
-in the program.
+mentioned by the loop's guard and body. (Variables not used in the loop
+do not contribute.)
 
