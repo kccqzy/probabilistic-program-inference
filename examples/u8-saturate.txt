@@ -1,0 +1,18 @@
+// The same counter as u8-wrap-counter.txt, but saturating. Instead of
+// wrapping around to 0, the counter sticks at 255, so all the probability
+// mass of runs that last 255 iterations or more piles up in that one state:
+// 255 has probability 2^-254 while every value k below it has 2^-k.
+//
+// Saturation makes 255 an absorbing state rather than closing the cycle the
+// wrapping counter has, which leaves the linear system a DAG of trivial
+// components. This example is therefore some three hundred times faster than
+// the wrapping one.
+
+i : u8[saturate];
+coin : bool;
+
+do {
+  coin ~ bernoulli 0.5;
+  i := i + 1;
+} while coin;
+return i;

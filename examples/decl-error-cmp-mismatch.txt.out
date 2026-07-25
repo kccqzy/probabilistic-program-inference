@@ -1,0 +1,5 @@
+./examples/decl-error-cmp-mismatch.txt:9:8:
+  |
+9 | r := b == x;
+  |        ^
+the operands of a comparison must have the same type, but the left has type bool and the right has type u8[saturate]; consider adding a cast

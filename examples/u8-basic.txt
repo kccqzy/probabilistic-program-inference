@@ -1,0 +1,25 @@
+// Literals, copies, casts in both directions and comparisons against
+// literals. Only one coin is flipped, so both rows have probability 1/2 and
+// the values can be read off by hand.
+//
+// Note that `unusedNum` and `unusedFlag` are declared but never used: the
+// column set comes from the preamble, so they are still reported, holding
+// their initial values of 0 and false.
+
+a, b : u8;
+zero : u8;
+unusedNum : u8;
+c, lt, ge, eq, ne, nonzero, unusedFlag : bool;
+fromBool : u8;
+
+c ~ bernoulli 0.5;
+a := 200;
+if c then { b := 200; } else { b := 100; }
+
+lt := b < a;
+ge := b >= a;
+eq := a == b;
+ne := a != b;
+
+nonzero := zero as bool;   // u8 -> bool is "is nonzero", so false
+fromBool := c as u8;       // bool -> u8 is 1 or 0

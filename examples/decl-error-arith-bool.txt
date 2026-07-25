@@ -1,0 +1,6 @@
+// Arithmetic applies to u8 values only; there is no arithmetic on bools.
+// (Where arithmetic may APPEAR is unrestricted -- it is the operand types
+// that are checked, not the surrounding statement.)
+
+a := true;
+b := a + a;

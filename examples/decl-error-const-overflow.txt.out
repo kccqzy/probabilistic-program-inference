@@ -1,0 +1,5 @@
+./examples/decl-error-const-overflow.txt:6:10:
+  |
+6 | x := 200 + 200;
+  |          ^
+constant arithmetic goes outside u8: 200 + 200 = 400, which is not in 0..255

@@ -1,0 +1,18 @@
+// The same counter again with the default `never` semantics, which is not a
+// wrapping rule but a conditioning one: overflowing traces are rejected, and
+// what is reported is the distribution conditional on no overflow ever having
+// happened.
+//
+// The counter can therefore reach 1..255 but never 0, and each value k has
+// probability 2^-k divided by the surviving mass 1 - 2^-255, i.e. exactly the
+// wrap counter's distribution restricted to the rows reached without wrapping
+// and renormalized.
+
+i : u8[never];
+coin : bool;
+
+do {
+  coin ~ bernoulli 0.5;
+  i := i + 1;
+} while coin;
+return i;

@@ -1,0 +1,5 @@
+// A bounded uniform distribution: flat 1/4 over 3..6.
+
+y : u8;
+
+y ~ uniform 3 6;

@@ -1,0 +1,16 @@
+// `==` and `!=` work on two bools as well as on two u8s: a bool is simply the
+// one-bit case, so `p == q` is exactly `not (p xor q)` and `p != q` is
+// `p xor q`.
+//
+// The ordered comparisons are u8-only -- `p < q` on bools is rejected, see
+// decl-error-bool-ordered.txt. There is no use for it, and it is a classic
+// place to write one thing and mean another.
+
+p, q : bool;
+eq, ne : bool;
+
+p ~ bernoulli 0.5;
+q ~ bernoulli 0.5;
+
+eq := p == q;
+ne := p != q;

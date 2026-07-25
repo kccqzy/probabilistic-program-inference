@@ -1,0 +1,2 @@
+x ~ bernoulli 0.5;
+while x do {}

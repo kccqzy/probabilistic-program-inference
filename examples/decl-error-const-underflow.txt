@@ -1,0 +1,6 @@
+// Likewise for a constant subtraction that goes below zero. Note that the
+// target being u8[wrap] does not make this wrap: the target's behavior has no
+// say over the right-hand side.
+x : u8[wrap];
+
+x := 5 - 6;

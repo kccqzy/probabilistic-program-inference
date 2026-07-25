@@ -1,0 +1,7 @@
+// The overflow semantics names are deliberately not keywords: they are only
+// recognized inside the brackets of a u8 declaration. A program with no
+// preamble may therefore keep using them as ordinary variable names.
+
+never := true;
+wrap := not never;
+saturate := wrap xor never;

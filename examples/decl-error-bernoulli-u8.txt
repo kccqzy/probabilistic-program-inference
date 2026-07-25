@@ -1,0 +1,5 @@
+// A bernoulli trial produces a boolean, so it cannot be sampled into a u8;
+// `uniform` is the integer-valued distribution.
+x : u8;
+
+x ~ bernoulli 0.5;

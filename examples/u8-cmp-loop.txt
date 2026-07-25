@@ -1,0 +1,17 @@
+// A comparison as a loop guard, with a random step size so that the loop is
+// probabilistic: count up until the counter reaches 3, adding 0, 1 or 2 each
+// time with equal probability.
+//
+// Writing f(i) for the distribution of the final value entering the body with
+// counter i, f(2) = 1/3 f(2) + 1/3 d3 + 1/3 d4, so f(2) = (d3 + d4)/2;
+// f(1) = 1/3 f(1) + 1/3 f(2) + 1/3 d3 gives f(1) = 3/4 d3 + 1/4 d4; and
+// f(0) = 1/3 f(0) + 1/3 f(1) + 1/3 f(2) gives f(0) = 5/8 d3 + 3/8 d4.
+// So the counter ends at 3 with probability 5/8 and at 4 with probability 3/8.
+
+i, step : u8;
+
+do {
+  step ~ uniform 0 2;
+  i := i + step;
+} while i < 3;
+return i;

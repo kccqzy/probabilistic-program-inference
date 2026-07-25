@@ -1,0 +1,16 @@
+// Aliasing: the right-hand side of an assignment reads the ORIGINAL bits of
+// the target, so `x := x + x` must double x rather than corrupt it one bit at
+// a time. After the two assignments x holds 3 times its original value.
+//
+// With c: x = 3, so 6 then 9. Without: x = 100, so 200 then 300, which wraps
+// to 300 - 256 = 44.
+
+x, y : u8[wrap];
+c : bool;
+
+c ~ bernoulli 0.5;
+if c then { x := 3; } else { x := 100; }
+
+y := x;
+x := x + x;
+x := x + y;

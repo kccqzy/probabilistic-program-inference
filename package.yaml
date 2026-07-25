@@ -13,7 +13,7 @@ dependencies:
 - containers >= 0.5.11
 - array
 - reflection
-- megaparsec >= 7.0.0
+- megaparsec >= 8.0.0 # registerParseError
 - parser-combinators >= 1.0.0
 - text
 - scientific >= 0.3.6.0
@@ -31,9 +31,19 @@ executables:
       - prob-den
 
 tests:
+  # Both suites live in test/ and both are their own Main, so neither may pick
+  # up the other as an ordinary module.
   linear-eq-test:
     main: LinearEqTest.hs
     source-dirs: test
+    other-modules: []
+    dependencies:
+      - QuickCheck
+      - prob-den
+  desugar-test:
+    main: DesugarTest.hs
+    source-dirs: test
+    other-modules: []
     dependencies:
       - QuickCheck
       - prob-den

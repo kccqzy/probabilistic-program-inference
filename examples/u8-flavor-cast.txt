@@ -1,0 +1,32 @@
+// Casting between the three u8 types, and what such a cast does and does not
+// do.
+//
+// A cast is a pure retagging: it says which rule future operations run
+// under, and touches none of the eight bits. So `sat` and `wrapped` below add
+// the very same two numbers, 200 and 100, and differ only in what becomes of
+// the 300 that does not fit.
+//
+//   sat     = 255   (saturated)
+//   wrapped =  44   (300 - 256)
+//   folded  = 210   (5 + 5 is folded to 10 by the compiler, then 200 + 10)
+//   copy    = 100   (cross-behavior assignment, no cast required)
+//   retro   = 144   (see below)
+//
+// `retro` is the case worth staring at. `a + a` is 400 and, both operands
+// being u8[wrap], it has already wrapped to 144 by the time the cast is
+// reached. A cast cannot retroactively saturate a value that was computed
+// under a different rule, so the answer is 144 and not 255.
+
+a : u8[wrap];
+b : u8[saturate];
+sat, wrapped, folded, retro : u8[wrap];
+copy : u8[never];
+
+a := 200;
+b := 100;
+
+sat := a as u8[saturate] + b;
+wrapped := a + b as u8[wrap];
+folded := a + (5 + 5);
+copy := b;
+retro := (a + a) as u8[saturate];

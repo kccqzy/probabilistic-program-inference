@@ -1,0 +1,11 @@
+./examples/decl-error-assign-mismatch.txt:6:6:
+  |
+6 | x := true;
+  |      ^
+the right-hand side of an assignment to the variable "x" must be u8, but this expression has type bool
+
+./examples/decl-error-assign-mismatch.txt:7:6:
+  |
+7 | b := 3;
+  |      ^
+the right-hand side of an assignment to the variable "b" must be bool, but this expression has type u8[_]

@@ -1,0 +1,27 @@
+// Saturating arithmetic in a while guard.
+//
+// Unlike `never`, saturation needs no conditioning, but it does take one
+// temporary to hold the overflow bit rather than substituting it into all
+// eight result bits. A guard is re-evaluated at every loop head, so that
+// temporary is recomputed and read there each time and must NOT be cleared
+// between iterations the way an ordinary statement's temporaries are.
+//
+// The counter climbs by 100 while the guard's `i + 100` is still below 255:
+//
+//   i = 0   -> body -> i = 100.  Guard: 100 + 100 = 200 < 255, so continue
+//                                if the coin says so.
+//   i = 100 -> body -> i = 200.  Guard: 200 + 100 saturates to 255, which is
+//                                not < 255, so stop regardless of the coin.
+//
+// giving i = 100 when the first coin is false (1/2), and i = 200 otherwise
+// (1/4 for each value of the second coin). Were the temporary cleared, the
+// guard would read a false overflow bit, 200 + 100 would come out as 44, and
+// the loop would carry on -- so this example pins the carve-out down.
+
+i : u8[saturate];
+c : bool;
+
+do {
+  c ~ bernoulli 0.5;
+  i := i + 100;
+} while c and i + 100 < 255;

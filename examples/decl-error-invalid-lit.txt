@@ -1,0 +1,7 @@
+b0: bool;
+i0: u8;
+
+
+b0 ~ bernoulli 5;
+i0 := 1234;
+i0 ~ uniform 4567 7890;

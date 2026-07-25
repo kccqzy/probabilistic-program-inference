@@ -1,0 +1,24 @@
+// `never` is conditioning, and a while guard is evaluated afresh before every
+// iteration, so a `never` overflow in a guard conditions the program at each
+// of those evaluations -- not merely on entry.
+//
+// i wraps its way up from 253 (the casts pick the wrapping rule for that
+// addition), but the guard computes i + 1 under `never`. The first evaluation
+// sees i = 254 and is fine; the run may then stop, or take another iteration
+// to i = 255, at which point the guard's i + 1 overflows and that run is
+// conditioned away. So every surviving run is one that stopped at 254, and
+// the answer is certain -- if the conditioning fired only on loop entry,
+// i = 255 would survive too.
+
+i : u8[never];
+c, stopped : bool;
+
+i := 253;
+
+do {
+  c ~ bernoulli 0.5;
+  i := i as u8[wrap] + 1 as u8[wrap];
+} while c and i + 1 > 0;
+
+// A comparison on two bools, which is the one-bit case of the same operation.
+stopped := c == false;

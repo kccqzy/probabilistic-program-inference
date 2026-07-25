@@ -1,0 +1,5 @@
+./examples/decl-error-bernoulli-u8.txt:5:1:
+  |
+5 | x ~ bernoulli 0.5;
+  | ^
+the u8 variable "x" cannot be sampled from a bernoulli distribution

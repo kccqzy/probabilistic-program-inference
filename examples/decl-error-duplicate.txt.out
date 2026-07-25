@@ -1,0 +1,5 @@
+./examples/decl-error-duplicate.txt:4:1:
+  |
+4 | a : bool;
+  | ^
+duplicate declaration of variable "a"

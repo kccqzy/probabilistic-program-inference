@@ -1,0 +1,27 @@
+// Subtraction, and what the three overflow behaviors do when it underflows.
+// The behavior comes from the OPERANDS: in `w - 1` the literal has no
+// behavior of its own and takes w's, so that subtraction wraps because w is
+// declared wrapping, and likewise for the other two.
+//
+// Two independent coins so all three can be seen at once: c decides whether
+// the wrapping and saturating variables underflow, d whether the `never` one
+// does. The trace in which n would underflow is conditioned away, so d is
+// false with probability 1 and n is always 4. c stays free:
+//
+//   c true:  w = 0 - 1 = 255 (wrapped),  s = 0 (clamped)   1/2
+//   c false: w = s = 4                                     1/2
+
+w : u8[wrap];
+s : u8[saturate];
+n : u8[never];
+c, d : bool;
+
+c ~ bernoulli 0.5;
+d ~ bernoulli 0.5;
+
+if c then { w := 0; s := 0; } else { w := 5; s := 5; };
+if d then { n := 0; } else { n := 5; };
+
+w := w - 1;
+s := s - 1;
+n := n - 1;

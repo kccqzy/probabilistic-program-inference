@@ -1,0 +1,7 @@
+count, sum, die : u8;
+do {
+    count := count + 1;
+    die ~ uniform 1 6;
+sum := sum + die;
+} while sum < 10;
+return count;

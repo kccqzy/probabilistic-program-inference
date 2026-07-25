@@ -1,0 +1,6 @@
+// A uniform distribution with no bounds covers the whole range of the type,
+// flat 1/256 over 0..255.
+
+x : u8;
+
+x ~ uniform;

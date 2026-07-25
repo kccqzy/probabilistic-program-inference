@@ -1,0 +1,5 @@
+./examples/decl-error-sem-mismatch.txt:11:8:
+   |
+11 | r := w + s;
+   |        ^
+mixed overflow behaviors in +: the left operand is u8[wrap] and the right is u8[saturate]; consider adding a cast: "as u8[saturate]" on the left, or "as u8[wrap]" on the right

@@ -1,0 +1,9 @@
+// A comparison ignores the overflow behavior -- any two u8s may be compared,
+// as may any two bools -- but it will not compare a bool against a u8.
+b : bool;
+x : u8;
+r : bool;
+
+b := true;
+x := 1;
+r := b == x;

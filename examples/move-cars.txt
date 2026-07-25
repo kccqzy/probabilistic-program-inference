@@ -1,0 +1,35 @@
+/* Suppose there are four cars and eight spaces. Initially the cars are located
+   in the left half of the spaces. At each iteration, each car flips a fair
+   coin. When the coin is H and if there is a space in front, then the car moves
+   forward by one space. How many iterations are needed to get all four cars in
+   the right half? */
+
+car1, car2, car3, car4: u8;
+count: u8;
+coin: bool;
+moveCar1, moveCar2, moveCar3, moveCar4: bool;
+
+car1 := 1;
+car2 := 2;
+car3 := 3;
+car4 := 4;
+
+do {
+    coin ~ bernoulli 0.5;
+    moveCar4 := car4 < 8 and coin;
+    coin ~ bernoulli 0.5;
+    moveCar3 := car4 != car3 + 1 and coin;
+    coin ~ bernoulli 0.5;
+    moveCar2 := car3 != car2 + 1 and coin;
+    coin ~ bernoulli 0.5;
+    moveCar1 := car2 != car1 + 1 and coin;
+
+    count := count + 1;
+    car4 := car4 + moveCar4 as u8;
+    car3 := car3 + moveCar3 as u8;
+    car2 := car2 + moveCar2 as u8;
+    car1 := car1 + moveCar1 as u8;
+
+
+} while not (car4 == 8 and car3 == 7 and car2 == 6 and car1 == 5) and count <= 25;
+return count;

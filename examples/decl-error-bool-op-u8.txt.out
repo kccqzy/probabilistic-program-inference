@@ -1,0 +1,11 @@
+./examples/decl-error-bool-op-u8.txt:5:6:
+  |
+5 | y := x and x;
+  |      ^
+the operand of and must be bool, but this expression has type u8[saturate]
+
+./examples/decl-error-bool-op-u8.txt:5:12:
+  |
+5 | y := x and x;
+  |            ^
+the operand of and must be bool, but this expression has type u8[saturate]

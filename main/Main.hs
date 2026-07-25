@@ -3,11 +3,16 @@ module Main
   ( main
   ) where
 
-import Data.Foldable
+import Control.Monad
+import qualified Data.Map.Strict as M
+import qualified Data.Set as Set
 import Options.Applicative
+import Prob.SurfaceAST
+import Prob.Desugar
 import Prob.Parse
 import Prob.Pretty
 import System.Exit
+import System.IO
 
 modeEval :: Parser Mode
 modeEval = ModeEval <$> option auto (long "eval" <> help "Sample the execution of the program N times" <> metavar "N")
@@ -21,10 +26,20 @@ progs = some (argument str (metavar "FILES..."))
 run :: (Mode, [FilePath]) -> IO ()
 run (m, args) =
   forM_ args $ \f -> do
-    mp <- doParseFromFile f
-    case mp of
-      Nothing -> exitWith (ExitFailure 1)
-      Just (Prog p) -> handleProgPretty p m >>= putStr . ($ [])
+    r <- processFile f
+    case r of
+      Left e -> hPutStr stderr e >> exitWith (ExitFailure 1)
+      Right p -> do
+        let display =
+              Display
+                { dColumns =
+                  if M.null (pgEnv p)
+                  then [(v, TyBool) | v <- Set.toAscList (programVars (pgSurface p))]
+                  else M.toAscList (pgEnv p)
+                , dRetTy = pgRetTy p
+                }
+        case desugarProgram (pgSurface p) of
+          AnyProg dp -> handleProgPretty dp display m >>= putStr . ($ [])
 
 main :: IO ()
 main = execParser opts >>= run

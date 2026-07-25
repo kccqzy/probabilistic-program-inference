@@ -1,0 +1,26 @@
+// The regression for the correctness trap in bounded uniform sampling.
+//
+// A uniform is drawn INSIDE a loop whose iteration count is probabilistic.
+// The tempting way to desugar `x ~ uniform 0 2` is to flip eight fair bits and
+// then `observe (x <= 2)`, which is fine outside a loop but wrong here: an
+// observe is a hard rejection with global renormalization, so each iteration
+// would multiply the trace's weight by the acceptance probability 3/256 and
+// longer traces would be suppressed by that factor raised to the iteration
+// count, skewing n towards small values. The decision tree injects no
+// rejection mass and has no such problem.
+//
+// So n must come out exactly geometric and x exactly flat on 0..2, the two
+// independent of each other: P(n = k, x = v) = 2^-k / 3, up to the conditioning
+// below. n has the `never` semantics, so the traces that would run for
+// a 256th iteration are conditioned away; that caps n at 255 and renormalizes
+// every row by the surviving mass 1 - 2^-255. The halving of P(n = k) as k
+// grows, the flatness of x and their independence are all exact.
+
+n, x : u8[never];
+coin : bool;
+
+do {
+  coin ~ bernoulli 0.5;
+  x ~ uniform 0 2;
+  n := n + 1;
+} while coin;

@@ -1,0 +1,5 @@
+./examples/decl-error-bool-ordered.txt:7:8:
+  |
+7 | r := p < q;
+  |        ^
+the ordered comparisons (<, <=, >, >=) are not available on bools; only == and != are

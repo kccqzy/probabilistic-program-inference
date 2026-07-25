@@ -1,0 +1,23 @@
+./examples/decl-error-invalid-lit.txt:5:16:
+  |
+5 | b0 ~ bernoulli 5;
+  |                ^
+bernoulli p 5.0 cannot be outside [0, 1]
+
+./examples/decl-error-invalid-lit.txt:6:7:
+  |
+6 | i0 := 1234;
+  |       ^
+u8 literal 1234 out of range 0..255
+
+./examples/decl-error-invalid-lit.txt:7:14:
+  |
+7 | i0 ~ uniform 4567 7890;
+  |              ^
+u8 literal 4567 out of range 0..255
+
+./examples/decl-error-invalid-lit.txt:7:19:
+  |
+7 | i0 ~ uniform 4567 7890;
+  |                   ^
+u8 literal 7890 out of range 0..255

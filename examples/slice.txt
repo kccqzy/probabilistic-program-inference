@@ -1,0 +1,35 @@
+// Slicing, which runs only in `return` mode. Three things must happen here.
+//
+// The fat u8 pipeline below feeds neither the returned expression, nor an
+// observe, nor a loop, so it is sliced away before desugaring and never costs
+// anything. Were it kept, two uniform u8s would put 2^16 states through a
+// ripple-carry adder and this example would take a very long time rather than
+// the few milliseconds it does take; the timing is the assertion.
+//
+// The observe must NOT be sliced away even though nothing reads d: rejection
+// changes the normalization of everything. Neither must the loop, even though
+// nothing reads z: `while z and d` diverges when z and d are both true, and
+// deleting a loop that might diverge changes which traces survive.
+//
+// Enumerating the eight equally likely combinations of coin, d and z: the two
+// with coin and d both false fail the observe, and the two with z and d both
+// true diverge. Of the four survivors three have coin true, so the answer is
+// 3/4 -- as against 2/3 if the loop were dropped, or 1/2 if the observe were
+// dropped as well.
+
+coin, d, z : bool;
+p, q, r : u8;
+
+p ~ uniform;
+q ~ uniform;
+r := p + q;
+r := r - p;
+
+coin ~ bernoulli 0.5;
+d ~ bernoulli 0.5;
+observe coin or d;
+
+z ~ bernoulli 0.5;
+while z and d do { skip; }
+
+return coin;

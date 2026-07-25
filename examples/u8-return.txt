@@ -1,0 +1,10 @@
+// `return` of a u8 expression: the result column holds the reconstructed
+// integer rather than a boolean.
+
+i, j : u8;
+c : bool;
+
+c ~ bernoulli 0.25;
+if c then { i := 7; j := 8; } else { i := 200; j:= 100; }
+
+return i, j;

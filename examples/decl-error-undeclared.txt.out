@@ -1,0 +1,5 @@
+./examples/decl-error-undeclared.txt:5:1:
+  |
+5 | b := not a;
+  | ^
+undeclared variable "b"

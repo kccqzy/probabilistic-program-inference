@@ -1,0 +1,19 @@
+// Arithmetic is an ordinary operator: it may appear wherever an expression
+// may, because a u8's type carries its overflow behavior and so answers on
+// its own the question of whose rule applies. Here + and - turn up in a loop
+// guard, in an observe, and in the returned expression.
+//
+// The loop counts up by a random step until i reaches 3, so it ends at 3 or 4
+// exactly as u8-cmp-loop.txt does; the observe then keeps only the runs that
+// landed on 4, and the answer is that value less one.
+
+i, step : u8[wrap];
+
+do {
+  step ~ uniform 0 2;
+  i := i + step;
+} while i + 1 < 4;
+
+observe i - 4 == 0;
+
+return i - 1;

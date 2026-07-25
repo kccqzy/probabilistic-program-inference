@@ -1,0 +1,7 @@
+// Ordered comparisons are available on u8 only; on bools just == and !=.
+p, q : bool;
+r : bool;
+
+p := true;
+q := false;
+r := p < q;

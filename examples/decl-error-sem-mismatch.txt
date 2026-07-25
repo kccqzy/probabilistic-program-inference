@@ -1,0 +1,11 @@
+// The three overflow behaviors are three distinct types, and the operands of
+// + and - must have the same one, so that there is never a question of whose
+// rule applies. Casting either operand resolves it, and the cast is free: it
+// changes the static type only, never the eight bits.
+w : u8[wrap];
+s : u8[saturate];
+r : u8;
+
+w := 200;
+s := 200;
+r := w + s;

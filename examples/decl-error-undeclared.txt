@@ -1,0 +1,5 @@
+// With a preamble present, every variable used must be declared.
+a : bool;
+
+a ~ bernoulli 0.5;
+b := not a;

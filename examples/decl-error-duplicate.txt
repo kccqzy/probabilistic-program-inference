@@ -1,0 +1,7 @@
+// A variable may not be declared twice.
+a : u8;
+b : bool;
+a : bool;
+
+a := 1;
+b := true;

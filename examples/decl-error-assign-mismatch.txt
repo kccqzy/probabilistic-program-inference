@@ -1,0 +1,7 @@
+// Assignment inserts no implicit conversions: an `as` cast must be written
+// out.
+x : u8;
+b : bool;
+
+x := true;
+b := 3;

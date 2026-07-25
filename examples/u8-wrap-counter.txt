@@ -1,0 +1,22 @@
+// A wrapping 8-bit counter driven by a fair coin: the number of loop
+// iterations is geometric, and the counter records it.
+//
+// This is exactly stress-test-8o.txt with the eight bit variables and the
+// hand-written increment replaced by a single u8, so the distribution over i
+// here must equal the distribution over stress-test-8o's timesBit variables
+// read as a binary number. That correspondence is the best end-to-end check of
+// the whole desugaring pipeline.
+//
+// Being a wrapping counter mutated in a loop, all 256 states form one
+// recurrent component and the solve is a dense 256x256 one: this is the slow
+// case the -W flag warns about, and it is inherent to exact inference over the
+// induced Markov chain, not an artifact of desugaring.
+
+i : u8[wrap];
+coin : bool;
+
+do {
+  coin ~ bernoulli 0.5;
+  i := i + 1;
+} while coin;
+return i;

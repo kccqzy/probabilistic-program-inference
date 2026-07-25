@@ -1,0 +1,10 @@
+// A declaration preamble in front of an otherwise old-style program. With a
+// preamble present, every variable used must be declared; several names may
+// share one declaration.
+
+a, b : bool;
+c : bool;
+
+a ~ bernoulli 0.5;
+b := not a;
+c := a xor b;   // always true

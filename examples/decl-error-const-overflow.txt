@@ -1,0 +1,6 @@
+// Arithmetic on two constants is evaluated by the compiler, so a result that
+// does not fit is a static error rather than a silent wrap or a silent
+// conditioning: nothing in the program said which of those was wanted.
+x : u8[wrap];
+
+x := 200 + 200;

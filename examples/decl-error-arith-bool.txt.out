@@ -1,0 +1,11 @@
+./examples/decl-error-arith-bool.txt:6:6:
+  |
+6 | b := a + a;
+  |      ^
+the operand of + must be u8, but this expression has type bool
+
+./examples/decl-error-arith-bool.txt:6:10:
+  |
+6 | b := a + a;
+  |          ^
+the operand of + must be u8, but this expression has type bool

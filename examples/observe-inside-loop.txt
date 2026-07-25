@@ -1,0 +1,8 @@
+sum, count, u: u8;
+while sum < 10 do {
+  u ~ uniform 1 3;
+  observe u != 3;
+  sum := sum + u;
+  count := count + 1;
+}
+return count;
