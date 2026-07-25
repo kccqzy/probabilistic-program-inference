@@ -1,5 +1,5 @@
 -------------------------------------------------  ----
-"bias" -> false "coin" -> false "parity" -> false  1/10
-"bias" ->  true "coin" -> false "parity" -> false  3/14
-"bias" ->  true "coin" -> false "parity" ->  true  2/7
 "bias" -> false "coin" -> false "parity" ->  true  2/5
+"bias" ->  true "coin" -> false "parity" ->  true  2/7
+"bias" ->  true "coin" -> false "parity" -> false  3/14
+"bias" -> false "coin" -> false "parity" -> false  1/10

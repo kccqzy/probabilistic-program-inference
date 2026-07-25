@@ -1,9 +1,9 @@
-----------------------------------------------------------------------------------------------------  ------
-"innerCoin" -> false "innerParity" -> false "outerCoin" -> false "outerParity" ->  true "z" -> false  2/55
-"innerCoin" -> false "innerParity" -> false "outerCoin" -> false "outerParity" ->  true "z" ->  true  2/55
-"innerCoin" -> false "innerParity" ->  true "outerCoin" -> false "outerParity" -> false "z" -> false  3/55
-"innerCoin" -> false "innerParity" ->  true "outerCoin" -> false "outerParity" -> false "z" ->  true  3/55
-"innerCoin" -> false "innerParity" ->  true "outerCoin" -> false "outerParity" ->  true "z" -> false  8/55
-"innerCoin" -> false "innerParity" ->  true "outerCoin" -> false "outerParity" ->  true "z" ->  true  8/55
-"innerCoin" -> false "innerParity" -> false "outerCoin" -> false "outerParity" -> false "z" -> false  29/110
-"innerCoin" -> false "innerParity" -> false "outerCoin" -> false "outerParity" -> false "z" ->  true  29/110
+----------------------------------------------------------------------------------------------------  ----------------
+"innerCoin" -> false "innerParity" -> false "outerCoin" -> false "outerParity" -> false "z" -> false  29/110 (≈ 0.263)
+"innerCoin" -> false "innerParity" -> false "outerCoin" -> false "outerParity" -> false "z" ->  true  29/110 (≈ 0.263)
+"innerCoin" -> false "innerParity" ->  true "outerCoin" -> false "outerParity" ->  true "z" -> false  8/55 (≈ 0.145)
+"innerCoin" -> false "innerParity" ->  true "outerCoin" -> false "outerParity" ->  true "z" ->  true  8/55 (≈ 0.145)
+"innerCoin" -> false "innerParity" ->  true "outerCoin" -> false "outerParity" -> false "z" -> false  3/55 (≈ 0.054)
+"innerCoin" -> false "innerParity" ->  true "outerCoin" -> false "outerParity" -> false "z" ->  true  3/55 (≈ 0.054)
+"innerCoin" -> false "innerParity" -> false "outerCoin" -> false "outerParity" ->  true "z" -> false  2/55 (≈ 0.036)
+"innerCoin" -> false "innerParity" -> false "outerCoin" -> false "outerParity" ->  true "z" ->  true  2/55 (≈ 0.036)
