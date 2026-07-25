@@ -32,8 +32,8 @@ handleProgPretty p m = formatResult <$> r
         ReturnAll {} -> map (first pprMap) <$> (case m of ModeDen -> pure (denProg p); ModeEval t -> sampled t p)
       where
         pprVar :: Bool -> ShowS
-        pprVar True = showString " true  "
-        pprVar False = showString "false  "
+        pprVar True = showString " true │"
+        pprVar False = showString "false │"
         pprMap :: Sigma vt -> ShowS
         pprMap sigma =
           foldr
@@ -45,16 +45,20 @@ handleProgPretty p m = formatResult <$> r
                     then "  true "
                     else " false ") .
                s)
-            (showString " ")
+            (showString "│ ")
             allVars
     formatResult :: [(ShowS, Rational)] -> ShowS
     formatResult [] = showString "No results produced.\n"
     formatResult rr =
-      bars .
+      headerBar .
       foldr
-        (\(col1, col2) s -> col1 . showString col2 . showChar '\n' . s)
+        (\(col1, col2) s ->
+           col1 . showString col2 . showChar '\n' . middleBar . s)
         id
-        formattedRats
+        formattedRats .
+        -- Once TODOs/TODO-diverge is implemented, we should show that instead.
+      showChar '∑' . showString (replicate (maxLen1 - 1) ' ') . showString "│ 1\n" .
+      footerBar
       where
         formattedRats :: [(ShowS, String)]
         formattedRats = map (second formatRational) (sortOn (Down . snd) rr)
@@ -62,8 +66,11 @@ handleProgPretty p m = formatResult <$> r
           ReturnAll {} -> sum [ 10 + length (show v)| v <- Set.toList allVars ]
           Return {} -> 6
         maxLen2 = maximum (map (length . snd) formattedRats)
-        bars =
-          showString (replicate (maxLen1 - 1) '-') . showString "  " . showString (replicate maxLen2 '-') . showChar '\n'
+        bar colsep =
+          showString (replicate (maxLen1 - 1) '═') . showString colsep . showString (replicate maxLen2 '═') . showChar '\n'
+        headerBar = bar "═╤═"
+        middleBar = bar "═╪═"
+        footerBar = bar "═╧═"
 
 formatRational :: Rational -> String
 formatRational rat = ($ []) $
