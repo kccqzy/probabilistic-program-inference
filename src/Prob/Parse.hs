@@ -66,8 +66,9 @@ ifStmt = do
   cond  <- expr
   keyword "then"
   stmt1 <- braces stmt
-  keyword "else"
-  stmt2 <- ifStmt <|> braces stmt
+  stmt2 <- option [] $ do
+    keyword "else"
+    ifStmt <|> braces stmt
   pure [Core.If cond stmt1 stmt2]
 
 whileStmt :: Parser [Stmt]
@@ -110,7 +111,19 @@ observeStmt = do
   pure [Core.Observe e]
 
 stmt :: Parser [Stmt]
-stmt = concat <$> sepEndBy (ifStmt <|> whileStmt <|> doWhileStmt <|> skipStmt <|> observeStmt <|> assignStmt <|> braces stmt) semi
+stmt = option [] (blockStmt <|> simpleStmt)
+  where
+    -- The difference between blockStmt and simpleStmt is just semicolon
+    -- handling; after a blockStmt a semicolon is optional. Otherwise it is
+    -- required.
+    blockStmt = do
+      item <- ifStmt <|> whileStmt <|> braces stmt
+      rest <- optional semi *> stmt
+      pure (item ++ rest)
+    simpleStmt = do
+      item <- doWhileStmt <|> skipStmt <|> observeStmt <|> assignStmt
+      rest <- option [] (semi *> stmt)
+      pure (item ++ rest)
 
 dist :: Parser Core.Dist
 dist = do
