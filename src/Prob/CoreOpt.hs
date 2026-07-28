@@ -51,7 +51,7 @@ sliceStmt s =
     -- uniform were the loop sliced away.
     While o e body -> do
       slicedBody <- sliceLoop e body
-      let loopVars = Set.unions (Set.fromList (toList e) : map (Set.fromList . toList) body)
+      let loopVars = Set.unions (Set.fromList (toList e) : map (Set.fromList .  toList) slicedBody)
       resetVars <- gets (loopVars `Set.difference`)
       pure (Just (While o e (slicedBody ++ [v := Constant False | v <- Set.toList resetVars])))
     x := e -> do
