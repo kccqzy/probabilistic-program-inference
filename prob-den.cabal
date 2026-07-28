@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: "^\DC2\140;\130\215. \159\135/p\218\130p\132\DLE\US\151\201\223\DC1\159\t/\246\177\211\210Z\194\211"
+-- hash: "j\227\244\179\222o\DC1\n\145\DC1?9\149\205@\163\&9h\b^\203\141\225\&1\144i\146%\135\CAN>["
 
 name:           prob-den
 version:        0.1.0.0
@@ -33,6 +33,7 @@ library
     , transformers
   exposed-modules:
       Prob.CoreAST
+      Prob.CoreOpt
       Prob.Den
       Prob.Eval
       Prob.LinearEq

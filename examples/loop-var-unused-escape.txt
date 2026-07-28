@@ -1,0 +1,6 @@
+do {
+    coin ~ bernoulli 0.5;
+    x := not coin;
+} while coin;
+// When we get here, coin must be false and x must be true.
+return x;

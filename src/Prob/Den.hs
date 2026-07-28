@@ -23,6 +23,7 @@ import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Set as Set
 import Prob.CoreAST
+import Prob.CoreOpt
 import qualified Prob.LinearEq as L
 
 --------------------------------------------------------------------------------
@@ -192,9 +193,12 @@ denProgReturnAll s =
   fromInitialState $ \initialState ->
     runDenStmt s initialState
 
+denProg' :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
+denProg' (s `Return` e) = denProgReturn s e
+denProg' (ReturnAll s) = denProgReturnAll s
+
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
-denProg (s `Return` e) = denProgReturn s e
-denProg (ReturnAll s) = denProgReturnAll s
+denProg = denProg' . sliceProgram
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]
 renormalize l = map (second (/tot)) l
