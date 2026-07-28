@@ -37,8 +37,18 @@ type Eval vt s = MaybeT (StateT (ProgState vt s) (ST s))
 runE :: (forall s. Eval vt s a) -> IO (Maybe a)
 runE e = withSystemRandomST $ \rng -> evalStateT (runMaybeT e) (Set.empty, rng)
 
+-- | Sample @t@ independent runs. The random number generator is threaded from
+-- one run to the next, but the variable assignment must not be: it is reset
+-- before each run, or a run would start from wherever its predecessor ended.
+-- (Only a program that reads a variable before assigning it can tell, which is
+-- why an all-boolean program that initializes everything never noticed.)
 runEs :: Int -> (forall s. Eval vt s a) -> IO [a]
-runEs t e = withSystemRandomST $ \rng -> catMaybes <$> evalStateT (replicateM t (runMaybeT e)) (Set.empty, rng)
+runEs t e =
+  withSystemRandomST $ \rng ->
+    catMaybes <$>
+    evalStateT
+      (replicateM t (modify (first (const Set.empty)) >> runMaybeT e))
+      (Set.empty, rng)
 
 evalExpr :: (Show vt, Ord vt) => Expr vt -> Eval vt s Bool
 evalExpr (Var x) = gets (Set.member x . fst)
