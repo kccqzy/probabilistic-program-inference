@@ -10,6 +10,10 @@ module Prob.CoreAST
   , Prog(..)
   , Sigma
   , sigmaInsert
+  , mkNot
+  , mkAnd
+  , mkOr
+  , mkXor
   ) where
 
 import qualified Data.Set as Set
@@ -68,3 +72,37 @@ type Sigma vt = Set.Set vt
 
 sigmaInsert :: Ord vt => vt -> Bool -> Sigma vt -> Sigma vt
 sigmaInsert x v = (if v then Set.insert else Set.delete) x
+
+--------------------------------------------------------------------------------
+-- The expression simplifier
+--------------------------------------------------------------------------------
+
+-- Smart constructors implementing constant folding and the local boolean
+-- identities. Each assumes its arguments are already simplified, so building an
+-- expression exclusively out of them yields a simplified expression.
+
+mkNot :: Expr vt -> Expr vt
+mkNot (Constant b) = Constant (not b)
+mkNot (Not e) = e
+mkNot e = Not e
+
+mkAnd :: Expr vt -> Expr vt -> Expr vt
+mkAnd (Constant False) _ = Constant False
+mkAnd _ (Constant False) = Constant False
+mkAnd (Constant True) e = e
+mkAnd e (Constant True) = e
+mkAnd a b = And a b
+
+mkOr :: Expr vt -> Expr vt -> Expr vt
+mkOr (Constant True) _ = Constant True
+mkOr _ (Constant True) = Constant True
+mkOr (Constant False) e = e
+mkOr e (Constant False) = e
+mkOr a b = Or a b
+
+mkXor :: Expr vt -> Expr vt -> Expr vt
+mkXor (Constant False) e = e
+mkXor e (Constant False) = e
+mkXor (Constant True) e = mkNot e
+mkXor e (Constant True) = mkNot e
+mkXor a b = Xor a b

@@ -1,0 +1,17 @@
+// Regression test for constant propagation between the two branches of an if
+// with a non-variable guard. The then-branch's assignment x := true must not
+// be assumed inside the else-branch: at runtime exactly one branch executes.
+// Here x is still false whenever the else-branch runs, so y is always false.
+
+x := false;
+y := false;
+a ~ bernoulli 0.5;
+b ~ bernoulli 0.5;
+
+if a and b then {
+  x := true;
+} else {
+  y := x;
+}
+
+return y;

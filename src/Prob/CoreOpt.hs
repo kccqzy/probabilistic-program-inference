@@ -1,17 +1,15 @@
 {-# LANGUAGE GADTs #-}
 
--- | Optimize a program so that the inference runs faster. This is not available
--- for ReturnAll mode. The idea is that if not all variables are returned, then
--- we can work backwards from the returned variable to remove all other
--- variables that are unnecessary, i.e. do not influence the value of the
--- returned variable. We implement it from starting from the end with the
--- returned variable as the only live variable and working backwards to modify
--- the live set and deleting statements. For loops however, we insert unnecessary
--- assignments inside them. If the loop internally needs a variable but such a
--- variable is not in the live set, it follows that the variable is not needed
--- beyond the loop. Therefore, we can insert statements to reset these variables.
+-- | Optimize a program so that the inference runs faster. We do constant
+-- propagation to eliminate some variables. Afterwards, we also do slicing by
+-- removing some statements that write to variables that are unnecessary,
+-- starting backwards from the returned variables. The idea is that if not all
+-- variables are returned, then we can work backwards from the returned variable
+-- to remove all other variables that do not influence the value of the returned
+-- variable. For loops however, we insert assignments to dead variables (always
+-- False) within the loop to keep the number of program states small.
 module Prob.CoreOpt
-  ( sliceProgram,
+  ( optimizeProgram,
   )
 where
 
@@ -19,11 +17,15 @@ import Control.Monad.Trans.State.Strict
 import Data.Foldable
 import qualified Data.Set as Set
 import Prob.CoreAST
+import qualified Data.Map.Strict as M
+import qualified Data.Map.Merge.Strict as MM
+
+optimizeProgram :: (Show vt, Ord vt) => Prog r vt -> Prog r vt
+optimizeProgram = sliceProgram . substituteProgram
 
 type Live vt = Set.Set vt
 
 -- | Slice a program, simplifying it by removing statements that do not matter.
--- Takes a list of statements and a set of variables that matter.
 sliceProgram :: Ord vt => Prog r vt -> Prog r vt
 sliceProgram (Return s e) = Return (evalState (sliceStmts s) (Set.fromList (toList e))) e
 sliceProgram p@ReturnAll {} = p
@@ -84,3 +86,100 @@ sliceLoop guard body = do
           then pure r
           else go
   go
+
+
+type KnownConstant vt = M.Map vt Bool
+
+initialKnownConstant :: Ord vt => Prog r vt -> KnownConstant vt
+initialKnownConstant = M.fromSet (const False) . Set.fromList . toList
+
+substituteProgram :: Ord vt => Prog r vt -> Prog r vt
+substituteProgram p@(ReturnAll s) = evalState (ReturnAll <$> substituteStmts s) (initialKnownConstant p)
+substituteProgram p@(Return s e) = evalState (Return <$> substituteStmts s <*> substituteExpr e) (initialKnownConstant p)
+
+substituteExpr :: Ord vt => Expr vt -> State (KnownConstant vt) (Expr vt)
+substituteExpr (a `And` b) = mkAnd <$> substituteExpr a <*> substituteExpr b
+substituteExpr (a `Or` b) = mkOr <$> substituteExpr a <*> substituteExpr b
+substituteExpr (a `Xor` b) = mkXor <$> substituteExpr a <*> substituteExpr b
+substituteExpr (Not a) = mkNot <$> substituteExpr a
+substituteExpr expr@Constant{} = pure expr
+substituteExpr expr@(Var v) = do
+  value <- gets (M.lookup v)
+  case value of
+    Nothing -> pure expr
+    Just b -> pure (Constant b)
+
+substituteStmts :: Ord vt => [Stmt vt] -> State (KnownConstant vt) [Stmt vt]
+substituteStmts = (concat <$>) . traverse substituteStmt
+
+substituteStmt :: Ord vt => Stmt vt -> State (KnownConstant vt) [Stmt vt]
+substituteStmt (v := expr) = do
+  expr' <- substituteExpr expr
+  case expr' of
+    Constant b -> modify' (M.insert v b)
+    _ -> modify' (M.delete v)
+  pure [v := expr']
+substituteStmt (v :~ Bernoulli 0) =
+  modify' (M.insert v False) >> pure [v := Constant False]
+substituteStmt (v :~ Bernoulli 1) =
+  modify' (M.insert v True) >> pure [v := Constant True]
+substituteStmt stmt@(v :~ _) =
+  modify' (M.delete v) >> pure [stmt]
+substituteStmt (Observe expr) = do
+  expr' <- substituteExpr expr
+  case expr' of
+    Constant True -> pure []
+    _ -> pure [Observe expr']
+substituteStmt (If expr s1 s2) = do
+  expr' <- substituteExpr expr
+  case expr' of
+    Constant True -> substituteStmts s1
+    Constant False -> substituteStmts s2
+    _ -> do
+      orig <- get
+      let trueState = assuming expr' True orig
+          falseState = assuming expr' False orig
+          (s1', out1) = runState (substituteStmts s1) trueState
+          (s2', out2) = runState (substituteStmts s2) falseState
+          newState = MM.merge MM.dropMissing MM.dropMissing (MM.zipWithMaybeMatched (\_ b1 b2 -> if b1 == b2 then Just b1 else Nothing)) out1 out2
+      put newState
+      pure [If expr' s1' s2']
+substituteStmt (While o expr s) = do
+  firstIterExpr <- substituteExpr expr
+  case firstIterExpr of
+    Constant False -> pure []
+    _ -> do
+      modify' (`M.withoutKeys` variablesWritten s)
+      expr' <- substituteExpr expr
+      beforeStmt <- get
+      -- The body may assume the guard held on entry.
+      modify' (assuming expr' True)
+      s' <- substituteStmts s
+      -- Now we have constants established within the loop, but we cannot use it
+      -- in case the loop runs zero times.
+      put beforeStmt
+      -- After the loop the guard came out false.
+      modify' (assuming expr' False)
+      pure [While o expr' s']
+
+-- | The variable assignments that must hold whenever the expression evaluates
+-- to the given value: a conjunction being true pins every conjunct, a
+-- disjunction being false pins every disjunct, and a negation flips the sense.
+-- An unsatisfiable expression may pin a variable both ways; either constant is
+-- then fine, because the code under the assumption can never run.
+assuming :: Ord vt => Expr vt -> Bool -> KnownConstant vt -> KnownConstant vt
+assuming (Var v) b = M.insert v b
+assuming (Not e) b = assuming e (not b)
+assuming (a `And` b) True = assuming a True . assuming b True
+assuming (a `Or` b) False = assuming a False . assuming b False
+assuming _ _ = id
+
+-- | Find variables that are assigned to in statements.
+variablesWritten :: Ord vt => [Stmt vt] -> Set.Set vt
+variablesWritten = foldMap go
+  where
+    go (v := _) = Set.singleton v
+    go (v :~ _) = Set.singleton v
+    go (If _ s1 s2) = variablesWritten s1 <> variablesWritten s2
+    go (While _ _ s) = variablesWritten s
+    go (Observe _) = Set.empty

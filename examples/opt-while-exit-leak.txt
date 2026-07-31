@@ -1,0 +1,14 @@
+// Regression test for constant propagation across a while loop. The loop body
+// runs zero times when x starts out false, so nothing learned from the body
+// (here: y = true) may be propagated past the loop. The correct answer is
+// y = true exactly when x was drawn true, i.e. 1/2 : 1/2.
+
+y := false;
+x ~ bernoulli 0.5;
+
+while x do {
+  x := false;
+  y := true;
+}
+
+return y;

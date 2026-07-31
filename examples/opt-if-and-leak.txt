@@ -1,0 +1,14 @@
+// Regression test for constant propagation across an if whose guard is not a
+// bare variable (here: a and b). The assignment in the then-branch only
+// happens when the guard is true, so x = true must not be propagated past the
+// if. The correct answer is x = true exactly when both coins are true: 1/4.
+
+x := false;
+a ~ bernoulli 0.5;
+b ~ bernoulli 0.5;
+
+if a and b then {
+  x := true;
+}
+
+return x;

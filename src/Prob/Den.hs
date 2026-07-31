@@ -198,7 +198,7 @@ denProg' (s `Return` e) = denProgReturn s e
 denProg' (ReturnAll s) = denProgReturnAll s
 
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
-denProg = denProg' . sliceProgram
+denProg = denProg' . optimizeProgram
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]
 renormalize l = map (second (/tot)) l
