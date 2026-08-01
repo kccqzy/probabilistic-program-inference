@@ -1,0 +1,55 @@
+// Ten coins that are IN the loop's footprint (resampled and read every
+// iteration) but dead at loop entry: each t is written before it is read in
+// the body, so its incoming value can never matter. The optimizer should reset
+// them at the beginning of the loop, so the inference does not have to run once
+// for every state. (That's 2^10 states.)
+
+u := false;
+b := true;
+
+t0 ~ bernoulli 0.5;
+observe t0 or not t0;
+t1 ~ bernoulli 0.5;
+observe t1 or not t1;
+t2 ~ bernoulli 0.5;
+observe t2 or not t2;
+t3 ~ bernoulli 0.5;
+observe t3 or not t3;
+t4 ~ bernoulli 0.5;
+observe t4 or not t4;
+t5 ~ bernoulli 0.5;
+observe t5 or not t5;
+t6 ~ bernoulli 0.5;
+observe t6 or not t6;
+t7 ~ bernoulli 0.5;
+observe t7 or not t7;
+t8 ~ bernoulli 0.5;
+observe t8 or not t8;
+t9 ~ bernoulli 0.5;
+observe t9 or not t9;
+
+while b do {
+  t0 ~ bernoulli 0.5;
+  u := u xor t0;
+  t1 ~ bernoulli 0.5;
+  u := u xor t1;
+  t2 ~ bernoulli 0.5;
+  u := u xor t2;
+  t3 ~ bernoulli 0.5;
+  u := u xor t3;
+  t4 ~ bernoulli 0.5;
+  u := u xor t4;
+  t5 ~ bernoulli 0.5;
+  u := u xor t5;
+  t6 ~ bernoulli 0.5;
+  u := u xor t6;
+  t7 ~ bernoulli 0.5;
+  u := u xor t7;
+  t8 ~ bernoulli 0.5;
+  u := u xor t8;
+  t9 ~ bernoulli 0.5;
+  u := u xor t9;
+  b ~ bernoulli 0.5;
+}
+
+return u;

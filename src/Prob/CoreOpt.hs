@@ -1,13 +1,4 @@
 {-# LANGUAGE GADTs #-}
-
--- | Optimize a program so that the inference runs faster. We do constant
--- propagation to eliminate some variables. Afterwards, we also do slicing by
--- removing some statements that write to variables that are unnecessary,
--- starting backwards from the returned variables. The idea is that if not all
--- variables are returned, then we can work backwards from the returned variable
--- to remove all other variables that do not influence the value of the returned
--- variable. For loops however, we insert assignments to dead variables (always
--- False) within the loop to keep the number of program states small.
 module Prob.CoreOpt
   ( optimizeProgram,
   )
@@ -20,6 +11,15 @@ import Prob.CoreAST
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
 
+-- | Optimize a program so that the inference runs faster. We do constant
+-- propagation to eliminate some variables, and hopefully get the loop footprint
+-- smaller. Afterwards, we also remove statements that write to variables that
+-- are unnecessary, starting backwards from the returned variables. The idea is
+-- that if not all variables are returned, then we can work backwards from the
+-- returned variable to remove all other variables that do not influence the
+-- value of the returned variable. For loops however, we insert assignments to
+-- dead variables (always False) at the end of the loop as well as just before
+-- the loop to keep the number of program states small.
 optimizeProgram :: (Show vt, Ord vt) => Prog r vt -> Prog r vt
 optimizeProgram = sliceProgram . substituteProgram
 
@@ -33,19 +33,15 @@ sliceProgram p@ReturnAll {} = p
 sliceStmts :: Ord vt => [Stmt vt] -> State (Live vt) [Stmt vt]
 sliceStmts = foldrM step []
   where
-    step s kept = do
-      sliced <- sliceStmt s
-      pure $ case sliced of
-        Nothing -> kept
-        Just s' -> s' : kept
+    step s kept = (++ kept) <$> sliceStmt s
 
-sliceStmt :: Ord vt => Stmt vt -> State (Live vt) (Maybe (Stmt vt))
+sliceStmt :: Ord vt => Stmt vt -> State (Live vt) [Stmt vt]
 sliceStmt s =
   case s of
     -- An observe changes the normalization of the whole program, so it is
     -- always kept.
     Observe e ->
-      modify' (`Set.union` Set.fromList (toList e)) >> pure (Just s)
+      modify' (`Set.union` Set.fromList (toList e)) >> pure [s]
     -- Every loop is kept. A loop that might diverge removes probability mass
     -- conditioned on the state it was entered in, so deleting it changes the
     -- answer even when nothing reads what it writes: @x ~ bernoulli 0.5; while
@@ -55,24 +51,25 @@ sliceStmt s =
       slicedBody <- sliceLoop e body
       let loopVars = Set.unions (Set.fromList (toList e) : map (Set.fromList .  toList) slicedBody)
       resetVars <- gets (loopVars `Set.difference`)
-      pure (Just (While o e (slicedBody ++ [v := Constant False | v <- Set.toList resetVars])))
+      let resetStmts = [v := Constant False | v <- Set.toList resetVars]
+      pure (resetStmts ++ [While o e (slicedBody ++ resetStmts)])
     x := e -> do
       isMember <- gets (x `Set.member`)
       if isMember
-        then modify' ((`Set.union` Set.fromList (toList e)) . Set.delete x) >> pure (Just s)
-        else pure Nothing
+        then modify' ((`Set.union` Set.fromList (toList e)) . Set.delete x) >> pure [s]
+        else pure []
     x :~ _ -> do
       isMember <- gets (x `Set.member`)
       if isMember
-        then modify' (Set.delete x) >> pure (Just s)
-        else pure Nothing
+        then modify' (Set.delete x) >> pure [s]
+        else pure []
     If e s1 s2 -> do
       live <- get
       let (k1, l1) = runState (sliceStmts s1) live
           (k2, l2) = runState (sliceStmts s2) live
       if null k1 && null k2
-        then pure Nothing
-        else put (Set.unions [Set.fromList (toList e), l1, l2]) >> pure (Just (If e k1 k2))
+        then pure []
+        else put (Set.unions [Set.fromList (toList e), l1, l2]) >> pure [If e k1 k2]
 
 sliceLoop :: Ord vt => Expr vt -> [Stmt vt] -> State (Live vt) [Stmt vt]
 sliceLoop guard body = do
