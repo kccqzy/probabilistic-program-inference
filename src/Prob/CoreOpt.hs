@@ -28,7 +28,7 @@ type Live vt = Set.Set vt
 -- | Slice a program, simplifying it by removing statements that do not matter.
 sliceProgram :: Ord vt => Prog r vt -> Prog r vt
 sliceProgram (Return s e) = Return (evalState (sliceStmts s) (Set.fromList (toList e))) e
-sliceProgram p@ReturnAll {} = p
+sliceProgram (ReturnAll s) = ReturnAll (evalState (sliceStmts s) (Set.fromList (foldMap toList s)))
 
 sliceStmts :: Ord vt => [Stmt vt] -> State (Live vt) [Stmt vt]
 sliceStmts = foldrM step []

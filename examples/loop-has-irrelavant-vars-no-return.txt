@@ -1,0 +1,20 @@
+do {
+    coin ~ bernoulli 0.5;
+    x := not coin;
+    irrelevant1 ~ bernoulli 0.5;
+    irrelevant2 ~ bernoulli 0.5;
+    irrelevant3 ~ bernoulli 0.5;
+    irrelevant4 ~ bernoulli 0.5;
+    irrelevant5 ~ bernoulli 0.5;
+    irrelevant6 ~ bernoulli 0.5;
+    irrelevant7 ~ bernoulli 0.5;
+    irrelevant8 ~ bernoulli 0.5;
+} while coin;
+irrelevant1 := false;
+irrelevant2 := false;
+irrelevant3 := false;
+irrelevant4 := false;
+irrelevant5 := false;
+irrelevant6 := false;
+irrelevant7 := false;
+irrelevant8 := false;
