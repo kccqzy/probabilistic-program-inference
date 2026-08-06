@@ -6,12 +6,7 @@
 
 -- | Denotational semantics using traditional normalized/unnormalized semantics.
 module Prob.Den
-  ( denExpr
-  , denStmt
-  , denProg
-  , denProgReturn
-  , denProgReturnAll
-  , denProgReturnMult
+  ( denProg
   ) where
 
 import Control.Monad
@@ -174,9 +169,6 @@ extractDist _ = error "extractDist: contains unsolved loop variables"
 denProgProject :: (Show vt, Ord vt, Ord r) => (Sigma vt -> r) -> [Stmt vt] -> [(r, Rational)]
 denProgProject f = renormalize . nonzeroes . M.toList . M.mapKeysWith (+) f . runDenStmt Set.empty
 
-denProgReturn :: (Show vt, Ord vt) => [Stmt vt] -> Expr vt -> [(Bool, Rational)]
-denProgReturn s e = denProgProject (denExpr e) s
-
 denProgReturnMult :: (Show vt, Ord vt) => [Stmt vt] -> NE.NonEmpty (Expr vt) -> [(NE.NonEmpty Bool, Rational)]
 denProgReturnMult s es = denProgProject (\sigma -> fmap (`denExpr` sigma) es) s
 
@@ -184,7 +176,6 @@ denProgReturnAll :: (Show vt, Ord vt) => [Stmt vt] -> [(Sigma vt, Rational)]
 denProgReturnAll = renormalize . nonzeroes . M.toList . runDenStmt Set.empty
 
 denProg' :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
-denProg' (s `Return` e) = denProgReturn s e
 denProg' (ReturnAll s) = denProgReturnAll s
 denProg' (ReturnMult s es) = denProgReturnMult s es
 

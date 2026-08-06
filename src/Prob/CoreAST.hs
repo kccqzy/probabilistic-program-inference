@@ -43,7 +43,7 @@ infixr 3 `Or`
 
 infix 2 :~
 
-infix 0 `Return`
+infix 0 `ReturnMult`
 
 data Stmt varTy
   = varTy := (Expr varTy)
@@ -58,7 +58,6 @@ data Stmt varTy
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 data Prog r varTy where
-  Return :: [Stmt varTy] -> Expr varTy -> Prog Bool varTy
   ReturnAll :: [Stmt varTy] -> Prog (Sigma varTy) varTy
   -- | Return several booleans at once.
   ReturnMult :: [Stmt varTy] -> NE.NonEmpty (Expr varTy) -> Prog (NE.NonEmpty Bool) varTy

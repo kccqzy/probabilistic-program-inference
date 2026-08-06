@@ -29,13 +29,9 @@ handleProgPretty p m = formatResult <$> r
     r :: IO [(ShowS, Rational)]
     r =
       case p of
-        Return {} -> map (first pprVar) <$> (case m of ModeDen -> pure (denProg p); ModeEval t -> sampled t p)
         ReturnAll {} -> map (first pprMap) <$> (case m of ModeDen -> pure (denProg p); ModeEval t -> sampled t p)
         ReturnMult {} -> map (first pprTupleVars) <$> (case m of ModeDen -> pure (denProg p); ModeEval t -> sampled t p)
       where
-        pprVar :: Bool -> ShowS
-        pprVar True = showString " true │"
-        pprVar False = showString "false │"
         pprTupleVars :: NE.NonEmpty Bool -> ShowS
         pprTupleVars =
           foldr (.) (showString  " │ ") .
@@ -72,7 +68,6 @@ handleProgPretty p m = formatResult <$> r
         maxLen1 :: Int
         maxLen1 = case p of
           ReturnAll {} -> sum [ 10 + length (show v)| v <- Set.toList allVars ]
-          Return {} -> 6
           ReturnMult _ es -> 5 * length es + 2 * (length es - 1) + 1
         maxLen2 = maximum (map (length . snd) formattedRats)
         bar colsep =
