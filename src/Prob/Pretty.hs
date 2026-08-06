@@ -9,6 +9,7 @@ module Prob.Pretty
 import Data.Bifunctor
 import Data.Foldable
 import Data.List
+import qualified Data.List.NonEmpty as NE
 import Data.Ord
 import Data.Ratio
 import Data.Scientific
@@ -35,11 +36,11 @@ handleProgPretty p m = formatResult <$> r
         pprVar :: Bool -> ShowS
         pprVar True = showString " true │"
         pprVar False = showString "false │"
-        pprTupleVars :: [Bool] -> ShowS
+        pprTupleVars :: NE.NonEmpty Bool -> ShowS
         pprTupleVars =
           foldr (.) (showString  " │ ") .
-          intersperse (showString ", ") .
-          map (\v -> showString (if v then " true" else "false"))
+          NE.intersperse (showString ", ") .
+          fmap (\v -> showString (if v then " true" else "false"))
         pprMap :: Sigma vt -> ShowS
         pprMap sigma =
           foldr

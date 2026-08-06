@@ -19,6 +19,7 @@ import Control.Monad.State
 import Data.Bifunctor
 import Data.Foldable
 import qualified Data.IntMap.Strict as IM
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Set as Set
@@ -176,8 +177,8 @@ denProgProject f = renormalize . nonzeroes . M.toList . M.mapKeysWith (+) f . ru
 denProgReturn :: (Show vt, Ord vt) => [Stmt vt] -> Expr vt -> [(Bool, Rational)]
 denProgReturn s e = denProgProject (denExpr e) s
 
-denProgReturnMult :: (Show vt, Ord vt) => [Stmt vt] -> [Expr vt] -> [([Bool], Rational)]
-denProgReturnMult s es = denProgProject (\sigma -> map (`denExpr` sigma) es) s
+denProgReturnMult :: (Show vt, Ord vt) => [Stmt vt] -> NE.NonEmpty (Expr vt) -> [(NE.NonEmpty Bool, Rational)]
+denProgReturnMult s es = denProgProject (\sigma -> fmap (`denExpr` sigma) es) s
 
 denProgReturnAll :: (Show vt, Ord vt) => [Stmt vt] -> [(Sigma vt, Rational)]
 denProgReturnAll = renormalize . nonzeroes . M.toList . runDenStmt Set.empty

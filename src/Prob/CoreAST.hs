@@ -16,6 +16,7 @@ module Prob.CoreAST
   , mkXor
   ) where
 
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Set as Set
 import Data.String
 
@@ -60,7 +61,7 @@ data Prog r varTy where
   Return :: [Stmt varTy] -> Expr varTy -> Prog Bool varTy
   ReturnAll :: [Stmt varTy] -> Prog (Sigma varTy) varTy
   -- | Return several booleans at once.
-  ReturnMult :: [Stmt varTy] -> [Expr varTy] -> Prog [Bool] varTy
+  ReturnMult :: [Stmt varTy] -> NE.NonEmpty (Expr varTy) -> Prog (NE.NonEmpty Bool) varTy
 deriving instance Show varTy => Show (Prog r varTy)
 deriving instance Foldable (Prog r)
 

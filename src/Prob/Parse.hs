@@ -9,7 +9,9 @@ module Prob.Parse
   ) where
 
 import Control.Monad
+import qualified Control.Monad.Combinators.NonEmpty as NEC
 import Control.Monad.Combinators.Expr
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.Void
@@ -153,10 +155,10 @@ prog :: Parser Prog
 prog = do
   spaces
   s <- stmt
-  r <- optional (keyword "return" *> sepBy1 expr comma <* semi)
+  r <- optional (keyword "return" *> NEC.sepBy1 expr comma <* semi)
   case r of
     Nothing -> pure (Prog (Core.ReturnAll s))
-    Just [e] -> pure (Prog (Core.Return s e))
+    Just (e NE.:| []) -> pure (Prog (Core.Return s e))
     Just es -> pure (Prog (Core.ReturnMult s es))
 
 doParseFromFile :: FilePath -> IO (Maybe Prog)
