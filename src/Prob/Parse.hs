@@ -43,6 +43,9 @@ braces = between (symbol "{") (symbol "}")
 semi :: Parser ()
 semi = void (symbol ";")
 
+comma :: Parser ()
+comma = void (symbol ",")
+
 keywords :: [T.Text]
 keywords = ["if", "then", "else", "while", "do", "skip", "true", "false", "not", "and", "or", "xor", "bernoulli", "return", "observe"]
 
@@ -150,10 +153,11 @@ prog :: Parser Prog
 prog = do
   spaces
   s <- stmt
-  r <- optional (keyword "return" *> expr <* semi)
+  r <- optional (keyword "return" *> sepBy1 expr comma <* semi)
   case r of
     Nothing -> pure (Prog (Core.ReturnAll s))
-    Just e -> pure (Prog (Core.Return s e))
+    Just [e] -> pure (Prog (Core.Return s e))
+    Just es -> pure (Prog (Core.ReturnMult s es))
 
 doParseFromFile :: FilePath -> IO (Maybe Prog)
 doParseFromFile filename = do

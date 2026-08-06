@@ -11,7 +11,7 @@ module Prob.Den
   , denProg
   , denProgReturn
   , denProgReturnAll
-  , runDenStmt
+  , denProgReturnMult
   ) where
 
 import Control.Monad
@@ -157,45 +157,35 @@ denStmt (loop@(While lbl e s):next) sigma = do
                  fmap (\c -> c {clEqns = (loopSigma, r) : clEqns c}) (dsCurrentLoop ds)
               })
 
-runDenStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Distr (Sigma vt)
-runDenStmt stmts sigma =
+runDenStmt :: (Show vt, Ord vt) => Sigma vt -> [Stmt vt] -> Distr (Sigma vt)
+runDenStmt sigma stmts =
   extractDist
     (evalState
        (denStmt stmts sigma)
        (DenState Nothing IM.empty M.empty))
 
--- | Run a denotation from the initial state, in which all variables are
--- @False@. With the distribution-valued 'denStmt', the answer is the entire
--- distribution over ending states — there is no longer any 2^N enumeration of
--- ending states to drive.
-fromInitialState :: (Sigma vt -> r) -> r
-fromInitialState g = g Set.empty
-
 extractDist :: Ret vt -> Distr (Sigma vt)
 extractDist (Ret d []) = d
 extractDist _ = error "extractDist: contains unsolved loop variables"
 
+-- | Run a program and summarize each ending state by @f@, adding together the
+-- probabilities of the states that @f@ maps to the same summary.
+denProgProject :: (Show vt, Ord vt, Ord r) => (Sigma vt -> r) -> [Stmt vt] -> [(r, Rational)]
+denProgProject f = renormalize . nonzeroes . M.toList . M.mapKeysWith (+) f . runDenStmt Set.empty
+
 denProgReturn :: (Show vt, Ord vt) => [Stmt vt] -> Expr vt -> [(Bool, Rational)]
-denProgReturn s e =
-  renormalize $
-  nonzeroes $
-  M.toList $
-  M.fromListWith (+) $
-  map (first (denExpr e)) $
-  fromInitialState $ \initialState ->
-    M.toList (runDenStmt s initialState)
+denProgReturn s e = denProgProject (denExpr e) s
+
+denProgReturnMult :: (Show vt, Ord vt) => [Stmt vt] -> [Expr vt] -> [([Bool], Rational)]
+denProgReturnMult s es = denProgProject (\sigma -> map (`denExpr` sigma) es) s
 
 denProgReturnAll :: (Show vt, Ord vt) => [Stmt vt] -> [(Sigma vt, Rational)]
-denProgReturnAll s =
-  renormalize $
-  nonzeroes $
-  M.toList $
-  fromInitialState $ \initialState ->
-    runDenStmt s initialState
+denProgReturnAll = renormalize . nonzeroes . M.toList . runDenStmt Set.empty
 
 denProg' :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
 denProg' (s `Return` e) = denProgReturn s e
 denProg' (ReturnAll s) = denProgReturnAll s
+denProg' (ReturnMult s es) = denProgReturnMult s es
 
 denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
 denProg = denProg' . optimizeProgram

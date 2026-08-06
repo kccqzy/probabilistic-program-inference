@@ -6,3 +6,4 @@ do {
   r := r || t;
   s ~ bernoulli 0.5;
 } while s;
+return r, t;

@@ -24,16 +24,22 @@ handleProgPretty p m = formatResult <$> r
   where
     allVars :: Set.Set vt
     allVars =
-      Set.fromList $ case p of Return s e -> concatMap toList s ++ toList e; ReturnAll s -> concatMap toList s
+      Set.fromList $ toList p
     r :: IO [(ShowS, Rational)]
     r =
       case p of
         Return {} -> map (first pprVar) <$> (case m of ModeDen -> pure (denProg p); ModeEval t -> sampled t p)
         ReturnAll {} -> map (first pprMap) <$> (case m of ModeDen -> pure (denProg p); ModeEval t -> sampled t p)
+        ReturnMult {} -> map (first pprTupleVars) <$> (case m of ModeDen -> pure (denProg p); ModeEval t -> sampled t p)
       where
         pprVar :: Bool -> ShowS
         pprVar True = showString " true │"
         pprVar False = showString "false │"
+        pprTupleVars :: [Bool] -> ShowS
+        pprTupleVars =
+          foldr (.) (showString  " │ ") .
+          intersperse (showString ", ") .
+          map (\v -> showString (if v then " true" else "false"))
         pprMap :: Sigma vt -> ShowS
         pprMap sigma =
           foldr
@@ -62,9 +68,11 @@ handleProgPretty p m = formatResult <$> r
       where
         formattedRats :: [(ShowS, String)]
         formattedRats = map (second formatRational) (sortOn (Down . snd) rr)
+        maxLen1 :: Int
         maxLen1 = case p of
           ReturnAll {} -> sum [ 10 + length (show v)| v <- Set.toList allVars ]
           Return {} -> 6
+          ReturnMult _ es -> 5 * length es + 2 * (length es - 1) + 1
         maxLen2 = maximum (map (length . snd) formattedRats)
         bar colsep =
           showString (replicate (maxLen1 - 1) '═') . showString colsep . showString (replicate maxLen2 '═') . showChar '\n'

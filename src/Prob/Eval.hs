@@ -93,6 +93,7 @@ evalStmt s@(While _ e stmt:next) = do
 evalProg :: (Show vt, Ord vt) => Prog r vt -> Eval vt s r
 evalProg (Return stmt expr) = evalStmt stmt >> evalExpr expr
 evalProg (ReturnAll stmt) = evalStmt stmt >> gets fst
+evalProg (ReturnMult stmt exprs) = evalStmt stmt >> traverse evalExpr exprs
 
 --------------------------------------------------------------------------------
 -- Utilities

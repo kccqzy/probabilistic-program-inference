@@ -28,6 +28,7 @@ type Live vt = Set.Set vt
 -- | Slice a program, simplifying it by removing statements that do not matter.
 sliceProgram :: Ord vt => Prog r vt -> Prog r vt
 sliceProgram (Return s e) = Return (evalState (sliceStmts s) (Set.fromList (toList e))) e
+sliceProgram (ReturnMult s es) = ReturnMult (evalState (sliceStmts s) (Set.fromList (foldMap toList es))) es
 sliceProgram (ReturnAll s) = ReturnAll (evalState (sliceStmts s) (Set.fromList (foldMap toList s)))
 
 sliceStmts :: Ord vt => [Stmt vt] -> State (Live vt) [Stmt vt]
@@ -93,6 +94,7 @@ initialKnownConstant = M.fromSet (const False) . Set.fromList . toList
 substituteProgram :: Ord vt => Prog r vt -> Prog r vt
 substituteProgram p@(ReturnAll s) = evalState (ReturnAll <$> substituteStmts s) (initialKnownConstant p)
 substituteProgram p@(Return s e) = evalState (Return <$> substituteStmts s <*> substituteExpr e) (initialKnownConstant p)
+substituteProgram p@(ReturnMult s es) = evalState (ReturnMult <$> substituteStmts s <*> traverse substituteExpr es) (initialKnownConstant p)
 
 substituteExpr :: Ord vt => Expr vt -> State (KnownConstant vt) (Expr vt)
 substituteExpr (a `And` b) = mkAnd <$> substituteExpr a <*> substituteExpr b

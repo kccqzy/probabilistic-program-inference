@@ -59,6 +59,8 @@ data Stmt varTy
 data Prog r varTy where
   Return :: [Stmt varTy] -> Expr varTy -> Prog Bool varTy
   ReturnAll :: [Stmt varTy] -> Prog (Sigma varTy) varTy
+  -- | Return several booleans at once.
+  ReturnMult :: [Stmt varTy] -> [Expr varTy] -> Prog [Bool] varTy
 deriving instance Show varTy => Show (Prog r varTy)
 deriving instance Foldable (Prog r)
 
