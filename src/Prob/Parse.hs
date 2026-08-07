@@ -274,7 +274,6 @@ parseAndTypeCheckProgram = parse ((program <* eof) >>= typeCheck)
 -- desugared.
 data Program = Program
   { pgSurface :: TyckedSProgram
-  , pgEnv :: Env
   , pgRetTy :: Maybe (NE.NonEmpty Ty)
   }
 
@@ -289,7 +288,6 @@ processText name input = do
   pure
     Program
       { pgSurface = ckProgram checked
-      , pgEnv = ckEnv checked
       , pgRetTy = ckRetTy checked
       }
 

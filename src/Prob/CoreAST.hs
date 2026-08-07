@@ -1,7 +1,5 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE StrictData #-}
 module Prob.CoreAST
   ( Expr(..)
@@ -16,7 +14,6 @@ module Prob.CoreAST
   , mkXor
   ) where
 
-import qualified Data.List.NonEmpty as NE
 import qualified Data.Set as Set
 import Data.String
 
@@ -57,12 +54,10 @@ data Stmt varTy
           [Stmt varTy]
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
-data Prog r varTy where
-  ReturnAll :: [Stmt varTy] -> Prog (Sigma varTy) varTy
-  -- | Return several booleans at once.
-  ReturnMult :: [Stmt varTy] -> NE.NonEmpty (Expr varTy) -> Prog (NE.NonEmpty Bool) varTy
-deriving instance Show varTy => Show (Prog r varTy)
-deriving instance Foldable (Prog r)
+-- | A program: the statements to run, and the booleans to return.
+data Prog varTy =
+  [Stmt varTy] `ReturnMult` [Expr varTy]
+  deriving (Show, Foldable)
 
 instance IsString (Expr String) where
   fromString = Var

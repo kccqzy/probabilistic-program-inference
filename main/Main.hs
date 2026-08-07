@@ -1,11 +1,8 @@
-{-# LANGUAGE GADTs #-}
 module Main
   ( main
   ) where
 
 import Control.Monad
-import qualified Data.Map.Strict as M
-import qualified Data.Set as Set
 import Options.Applicative
 import Prob.SurfaceAST
 import Prob.Desugar
@@ -29,17 +26,15 @@ run (m, args) =
     r <- processFile f
     case r of
       Left e -> hPutStr stderr e >> exitWith (ExitFailure 1)
-      Right p -> do
+      Right p ->
         let display =
-              Display
-                { dColumns =
-                  if M.null (pgEnv p)
-                  then [(v, TyBool) | v <- Set.toAscList (programVars (pgSurface p))]
-                  else M.toAscList (pgEnv p)
-                , dRetTy = pgRetTy p
-                }
-        case desugarProgram (pgSurface p) of
-          AnyProg dp -> handleProgPretty dp display m >>= putStr . ($ [])
+              case pgRetTy p of
+                Just tys -> Returned tys
+                -- When the program does not have a return the columns are the
+                -- reported vars in name order. This is safe because
+                -- @desugarProgram@ makes the same choice.
+                Nothing -> Columns (reportedVars (pgSurface p))
+        in handleProgPretty (desugarProgram (pgSurface p)) display m >>= putStr . ($ [])
 
 main :: IO ()
 main = execParser opts >>= run

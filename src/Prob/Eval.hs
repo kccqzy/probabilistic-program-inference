@@ -1,4 +1,3 @@
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
 module Prob.Eval
   ( runE
@@ -90,8 +89,7 @@ evalStmt s@(While _ e stmt:next) = do
     then evalStmt stmt >> evalStmt s
     else evalStmt next
 
-evalProg :: (Show vt, Ord vt) => Prog r vt -> Eval vt s r
-evalProg (ReturnAll stmt) = evalStmt stmt >> gets fst
+evalProg :: (Show vt, Ord vt) => Prog vt -> Eval vt s [Bool]
 evalProg (ReturnMult stmt exprs) = evalStmt stmt >> traverse evalExpr exprs
 
 --------------------------------------------------------------------------------
@@ -104,5 +102,5 @@ renormalize :: [(a, Int)] -> [(a, Rational)]
 renormalize l = fmap (fmap (\n -> fromIntegral n % fromIntegral tot)) l
   where tot = sum (map snd l)
 
-sampled :: (Show vt, Ord vt, Ord r) => Int -> Prog r vt -> IO [(r, Rational)]
+sampled :: (Show vt, Ord vt) => Int -> Prog vt -> IO [([Bool], Rational)]
 sampled t prog = renormalize . tally <$> runEs t (evalProg prog)

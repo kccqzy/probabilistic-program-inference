@@ -1,4 +1,3 @@
-{-# LANGUAGE GADTs #-}
 module Prob.CoreOpt
   ( optimizeProgram,
   )
@@ -20,15 +19,14 @@ import qualified Data.Map.Merge.Strict as MM
 -- value of the returned variable. For loops however, we insert assignments to
 -- dead variables (always False) at the end of the loop as well as just before
 -- the loop to keep the number of program states small.
-optimizeProgram :: (Show vt, Ord vt) => Prog r vt -> Prog r vt
+optimizeProgram :: (Show vt, Ord vt) => Prog vt -> Prog vt
 optimizeProgram = sliceProgram . substituteProgram
 
 type Live vt = Set.Set vt
 
 -- | Slice a program, simplifying it by removing statements that do not matter.
-sliceProgram :: Ord vt => Prog r vt -> Prog r vt
+sliceProgram :: Ord vt => Prog vt -> Prog vt
 sliceProgram (ReturnMult s es) = ReturnMult (evalState (sliceStmts s) (Set.fromList (foldMap toList es))) es
-sliceProgram (ReturnAll s) = ReturnAll (evalState (sliceStmts s) (Set.fromList (foldMap toList s)))
 
 sliceStmts :: Ord vt => [Stmt vt] -> State (Live vt) [Stmt vt]
 sliceStmts = foldrM step []
@@ -87,11 +85,10 @@ sliceLoop guard body = do
 
 type KnownConstant vt = M.Map vt Bool
 
-initialKnownConstant :: Ord vt => Prog r vt -> KnownConstant vt
+initialKnownConstant :: Ord vt => Prog vt -> KnownConstant vt
 initialKnownConstant = M.fromSet (const False) . Set.fromList . toList
 
-substituteProgram :: Ord vt => Prog r vt -> Prog r vt
-substituteProgram p@(ReturnAll s) = evalState (ReturnAll <$> substituteStmts s) (initialKnownConstant p)
+substituteProgram :: Ord vt => Prog vt -> Prog vt
 substituteProgram p@(ReturnMult s es) = evalState (ReturnMult <$> substituteStmts s <*> traverse substituteExpr es) (initialKnownConstant p)
 
 substituteExpr :: Ord vt => Expr vt -> State (KnownConstant vt) (Expr vt)

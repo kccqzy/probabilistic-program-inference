@@ -1,5 +1,3 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 -- | Print inference/evaluation results in a slightly pretty way
 module Prob.Pretty
   ( Mode(..)
@@ -11,12 +9,9 @@ import Data.Bifunctor
 import Data.Bits
 import Data.List
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Map.Strict as M
-import Data.Maybe
 import Data.Ord
 import Data.Ratio
 import Data.Scientific
-import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Word
 import Prob.CoreAST
@@ -26,61 +21,30 @@ import Prob.SurfaceAST (Ty(..), Var(..))
 
 data Mode = ModeDen | ModeEval Int
 
--- | What the desugarer and the type checker know that the core program no
--- longer does: which variables are to be shown in which order and at which
--- type, and what the surface type of the @return@ expression was.
-data Display = Display
-  { dColumns :: [(T.Text, Ty)]
-    -- ^ In name order. In ReturnAll mode these come from the declaration
-    -- preamble (or, in legacy mode, from the variables that occur), so a
-    -- variable that is declared but never used still gets a column showing its
-    -- initial value.
-  , dRetTy :: Maybe (NE.NonEmpty Ty)
-  }
+-- | How to read the booleans a program returns: what the type checker knows
+-- about them and the core program no longer does.
+data Display
+  = Columns [(T.Text, Ty)]
+    -- ^ The program had no @return@ and so reports its variables: these, in
+    -- name order. They come from the declaration preamble (or, in legacy mode,
+    -- from the variables that occur), so a variable that is declared but never
+    -- used still gets a column showing its initial value.
+  | Returned (NE.NonEmpty Ty)
+    -- ^ The surface types of the @return@ expressions.
 
-handleProgPretty :: forall r. Prog r Var -> Display -> Mode -> IO ShowS
-handleProgPretty p disp m = formatResult <$> r
+handleProgPretty :: Prog Var -> Display -> Mode -> IO ShowS
+handleProgPretty p disp m = formatResult . render <$> results
   where
-    r :: IO [(ShowS, Rational)]
-    r =
-      case p of
-        ReturnMult {} -> map (first (reassembleReturn (fromJust (dRetTy disp)))) <$> results p
-        ReturnAll {} -> mergeRows . map (first project) <$> results p
-      where
-        -- Written to take the program back as an argument so that each branch
-        -- above passes in a 'Prog' whose result type the GADT match has
-        -- refined, which is where the 'Ord' instance comes from.
-        results :: forall q. Ord q => Prog q Var -> IO [(q, Rational)]
-        results q =
-          case m of
-            ModeDen -> pure (denProg q)
-            ModeEval t -> sampled t q
-    -- Drop the desugarer's temporaries, which are not user-visible, and add
-    -- together the states that become equal once they are gone.
-    project :: Sigma Var -> Sigma Var
-    project = Set.filter (not . isTmp)
-      where
-        isTmp (TmpVar _) = True
-        isTmp _ = False
-    mergeRows :: [(Sigma Var, Rational)] -> [(ShowS, Rational)]
-    mergeRows rows = map (first pprRow) (M.toList (M.fromListWith (+) rows))
-    pprRow :: Sigma Var -> ShowS
-    pprRow sigma =
-      foldr (\c s -> cell c . s) (showString "│ ") (dColumns disp)
-      where
-        cell (name, TyBool) =
-          shows name .
-          showString " ->" .
-          showString (if Set.member (BoolVar name) sigma then "  true " else " false ")
-        cell (name, TyU8 _) =
-          shows name .
-          showString " ->" .
-          showString
-            (' ' :
-             padLeft
-               3
-               (show (fromBits [Set.member (U8Var name i) sigma | i <- [0 .. 7]])) ++
-             " ")
+    results :: IO [([Bool], Rational)]
+    results =
+      case m of
+        ModeDen -> pure (denProg p)
+        ModeEval t -> sampled t p
+    render :: [([Bool], Rational)] -> [(ShowS, Rational)]
+    render =
+      case disp of
+        Returned tys -> map (first (reassembleReturn (NE.toList tys)))
+        Columns cols -> map (first (pprRow cols))
     formatResult :: [(ShowS, Rational)] -> ShowS
     formatResult [] = showString "No results produced.\n"
     formatResult rr =
@@ -97,15 +61,9 @@ handleProgPretty p disp m = formatResult <$> r
         formattedRats :: [(ShowS, String)]
         formattedRats = map (second formatRational) (sortOn (Down . snd) rr)
         maxLen1 :: Int
-        maxLen1 = case p of
-          ReturnAll {} -> sum (map columnWidth (dColumns disp))
-          ReturnMult {} ->
-            case dRetTy disp of
-              Nothing -> error "internal error: not possible to return Nothing here"
-              Just tys -> sum (fmap tyLen tys) + 2 * (length tys - 1) + 1
-            where
-              tyLen TyBool = 5
-              tyLen TyU8 {} = 3
+        maxLen1 = case disp of
+          Columns cols -> sum (map columnWidth cols)
+          Returned tys -> sum (fmap valueWidth tys) + 2 * (length tys - 1) + 1
         maxLen2 = maximum (map (length . snd) formattedRats)
         bar colsep =
           showString (replicate (maxLen1 - 1) '═') . showString colsep . showString (replicate maxLen2 '═') . showChar '\n'
@@ -113,22 +71,40 @@ handleProgPretty p disp m = formatResult <$> r
         middleBar = bar "═╪═"
         footerBar = bar "═╧═"
 
-reassembleReturn :: NE.NonEmpty Ty -> NE.NonEmpty Bool -> ShowS
+-- | One row of the table a @return@ produces: the returned values, in order.
+reassembleReturn :: [Ty] -> [Bool] -> ShowS
 reassembleReturn tys bools =
-  foldr (.) (showString " │ ") (intersperse (showString ", ") (cells (NE.toList tys) (NE.toList bools)))
+  foldr (.) (showString " │ ") (intersperse (showString ", ") cells)
   where
-    cells [] _ = []
-    cells (ty : tss) bs =
-      let (bits, rest) = splitAt (tyBits ty) bs
-      in cell ty bits : cells tss rest
-    cell TyBool bits = showString (if or bits then " true" else "false")
-    cell TyU8 {} bits = showString (padLeft 3 (show (fromBits bits)))
-    tyBits TyBool = 1
-    tyBits TyU8 {} = 8
+    cells = [showString (value ty bs) | (ty, bs) <- splitByTy tys bools]
 
--- | The width of one column of a ReturnAll table: the quoted name, the arrow,
+-- | One row of the table a program with no @return@ produces: every variable
+-- and the value it ended up with.
+pprRow :: [(T.Text, Ty)] -> [Bool] -> ShowS
+pprRow cols bits =
+  foldr (\c s -> cell c . s) (showString "│ ") (zip (map fst cols) values)
+  where
+    values = splitByTy (map snd cols) bits
+    cell (name, (ty, bs)) =
+      shows name . showString " -> " . showString (value ty bs) . showChar ' '
+
+-- | Cut a run of bits into values according to the given types.
+splitByTy :: [Ty] -> [Bool] -> [(Ty, [Bool])]
+splitByTy [] _ = []
+splitByTy (ty:tys) bs = (ty, here) : splitByTy tys rest
+  where
+    (here, rest) = splitAt (if ty == TyBool then 1 else 8) bs
+
+-- | A value, right-aligned in the field width its type gets.
+value :: Ty -> [Bool] -> String
+value TyBool bs = padLeft (valueWidth TyBool) (if or bs then "true" else "false")
+value ty@TyU8 {} bs = padLeft (valueWidth ty) (show (fromBits bs))
+
+-- | The width of one column of a 'Columns' table: the quoted name, the arrow,
 -- and a right-aligned value field. A bool needs five characters for its value
--- (@false@), a u8 three (@255@).
+-- (@false@), a u8 three (@255@). The bool case is exactly the fixed width the
+-- table used before u8 existed, which is what keeps legacy output
+-- byte-identical.
 columnWidth :: (T.Text, Ty) -> Int
 columnWidth (name, ty) = length (show name) + 5 + valueWidth ty
 
@@ -139,9 +115,9 @@ valueWidth (TyU8 _) = 3
 padLeft :: Int -> String -> String
 padLeft n s = replicate (n - length s) ' ' ++ s
 
--- | Assemble bits, least significant first, into the integer they denote.
+-- | Assemble bits, most significant first, into the integer they denote.
 fromBits :: [Bool] -> Word8
-fromBits bs = foldl' (\acc (i, b) -> if b then setBit acc i else acc) 0 (zip [0 ..] bs)
+fromBits bs = foldl' (\acc (i, b) -> if b then setBit acc i else acc) 0 (zip [7, 6 .. 0] bs)
 
 formatRational :: Rational -> String
 formatRational rat = ($ []) $

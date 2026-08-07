@@ -24,13 +24,12 @@ module Prob.SurfaceAST
   , prettyTy
   , toSuperType
   , unifySem
-  , exprVars
-  , stmtVars
-  , programVars
+  , reportedVars
   , mentions
   ) where
 
 import qualified Data.List.NonEmpty as NE
+import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Word
@@ -188,10 +187,14 @@ stmtVars (SIf e s1 s2) =
 stmtVars (SWhile _ e s) = Set.unions (exprVars e : map stmtVars s)
 stmtVars (SDoWhile _ s e) = Set.unions (exprVars e : map stmtVars s)
 
--- | Every variable occurring anywhere in the program.
-programVars :: SProgram a -> Set.Set T.Text
-programVars p =
-  Set.unions (maybe Set.empty (foldMap exprVars) (spRet p) : map stmtVars (spStmts p))
+-- | What a program with no @return@ statement reports: every declared
+-- variable and its declared type. In legacy programs, this is all variables
+-- with an implicit bool type.
+reportedVars :: SProgram a -> [(T.Text, Ty)]
+reportedVars p
+  | null (spDecls p) =
+    [(x, TyBool) | x <- Set.toAscList (foldMap stmtVars (spStmts p))]
+  | otherwise = M.toAscList (M.fromList [(dName d, dAnn d) | d <- spDecls p])
 
 -- | Whether an expression mentions a given variable.
 mentions :: T.Text -> SExpr a -> Bool

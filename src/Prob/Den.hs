@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StrictData #-}
@@ -14,7 +13,6 @@ import Control.Monad.State
 import Data.Bifunctor
 import Data.Foldable
 import qualified Data.IntMap.Strict as IM
-import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Set as Set
@@ -164,23 +162,12 @@ extractDist :: Ret vt -> Distr (Sigma vt)
 extractDist (Ret d []) = d
 extractDist _ = error "extractDist: contains unsolved loop variables"
 
--- | Run a program and summarize each ending state by @f@, adding together the
--- probabilities of the states that @f@ maps to the same summary.
-denProgProject :: (Show vt, Ord vt, Ord r) => (Sigma vt -> r) -> [Stmt vt] -> [(r, Rational)]
-denProgProject f = renormalize . nonzeroes . M.toList . M.mapKeysWith (+) f . runDenStmt Set.empty
-
-denProgReturnMult :: (Show vt, Ord vt) => [Stmt vt] -> NE.NonEmpty (Expr vt) -> [(NE.NonEmpty Bool, Rational)]
-denProgReturnMult s es = denProgProject (\sigma -> fmap (`denExpr` sigma) es) s
-
-denProgReturnAll :: (Show vt, Ord vt) => [Stmt vt] -> [(Sigma vt, Rational)]
-denProgReturnAll = renormalize . nonzeroes . M.toList . runDenStmt Set.empty
-
-denProg' :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
-denProg' (ReturnAll s) = denProgReturnAll s
-denProg' (ReturnMult s es) = denProgReturnMult s es
-
-denProg :: (Show vt, Ord vt) => Prog r vt -> [(r, Rational)]
-denProg = denProg' . optimizeProgram
+-- | Run a program and evaluate its returned expressions in each ending state,
+-- adding together the probabilities of the states that agree on all of them.
+denProg :: (Show vt, Ord vt) => Prog vt -> [([Bool], Rational)]
+denProg p = renormalize . nonzeroes . M.toList . M.mapKeysWith (+) project $ runDenStmt Set.empty s
+  where s `ReturnMult` es = optimizeProgram p
+        project sigma = map (`denExpr` sigma) es
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]
 renormalize l = map (second (/tot)) l

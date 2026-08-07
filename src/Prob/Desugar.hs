@@ -1,4 +1,3 @@
-{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StrictData #-}
@@ -8,8 +7,7 @@
 -- ripple-carry expressions; uniform integer distributions become a decision
 -- tree over bernoulli coins.
 module Prob.Desugar
-  ( AnyProg (..),
-    desugarProgram,
+  ( desugarProgram,
   )
 where
 
@@ -17,17 +15,12 @@ import Control.Monad (replicateM)
 import Control.Monad.Trans.State.Strict
 import Data.Bits (shiftL, testBit)
 import Data.Foldable
-import qualified Data.List.NonEmpty as NE
 import Data.Ratio
 import qualified Data.Sequence as Seq
 import qualified Data.Text as T
 import Data.Word
 import Prob.CoreAST
 import Prob.SurfaceAST
-
--- | A desugared program whose result type has been forgotten. Pattern
--- matching on the 'Prog' GADT recovers it.
-data AnyProg = forall r. AnyProg (Prog r Var)
 
 --------------------------------------------------------------------------------
 -- Emission of core statements
@@ -301,12 +294,18 @@ constBits v = [Constant (testBit v i) | i <- [0 .. 7]]
 
 --------------------------------------------------------------------------------
 
-desugarProgram :: TyckedSProgram -> AnyProg
+desugarProgram :: TyckedSProgram -> Prog Var
 desugarProgram p =
   case spRet p of
-    Nothing -> AnyProg (ReturnAll (toList stmts))
+    -- Without a @return@ the program reports its variables. No preludes
+    -- needed.
+    Nothing -> toList stmts `ReturnMult` concatMap varBits (reportedVars p)
     Just es ->
       let (retStmts, bits) = runD (traverse lowerBits es)
-      in AnyProg (toList (stmts Seq.>< retStmts) `ReturnMult` NE.fromList (concat bits))
+      in toList (stmts Seq.>< retStmts) `ReturnMult` concatMap reverse bits
   where
     stmts = desugarStmts (spStmts p)
+    -- For a nice sort, the returned bits are MSB first. This matches what
+    -- @fromBits@ does in Pretty.
+    varBits (x, TyBool) = [Var (BoolVar x)]
+    varBits (x, TyU8 _) = [Var (U8Var x i) | i <- [7, 6 .. 0]]

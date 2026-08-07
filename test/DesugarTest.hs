@@ -1,4 +1,3 @@
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | End-to-end properties of u8 support: source text goes through the whole
@@ -15,15 +14,16 @@ import Control.Monad
 import Data.Bifunctor
 import Data.Bits
 import Data.List (sort)
-import qualified Data.List.NonEmpty as NE
+import Data.Maybe
 import Data.Ratio
 import qualified Data.Text as T
 import Data.Word
-import Prob.CoreAST
+import Prob.CoreAST (Prog)
 import Prob.Den (denProg)
 import Prob.Desugar
 import Prob.Eval (sampled)
 import Prob.Parse
+import Prob.SurfaceAST (Var)
 import System.Exit
 import Test.QuickCheck
 import Test.QuickCheck.Monadic
@@ -32,7 +32,7 @@ import Test.QuickCheck.Monadic
 -- Running a program written as source text
 --------------------------------------------------------------------------------
 
-compile :: T.Text -> AnyProg
+compile :: T.Text -> Prog Var
 compile src =
   case processText "<property>" src of
     Left e -> error ('\n' : e)
@@ -41,19 +41,16 @@ compile src =
 -- | Infer a program that returns a u8. An empty result means every trace was
 -- rejected, which is what @never@ does on overflow.
 inferU8 :: T.Text -> [(Word8, Rational)]
-inferU8 src =
-  case compile src of
-    AnyProg p@ReturnMult {} -> [(fromBits (NE.toList bs), q) | (bs, q) <- denProg p]
-    _ -> error "inferU8: the program does not return a u8"
+inferU8 src = [(fromBits bs, q) | (bs, q) <- denProg (compile src)]
 
 inferBool :: T.Text -> [(Bool, Rational)]
-inferBool src =
-  case compile src of
-    AnyProg p@ReturnMult {} -> map (first NE.head) (denProg p)
-    _ -> error "inferBool: the program does not return a bool"
+inferBool src = [(onlyBit bs, q) | (bs, q) <- denProg (compile src)]
+  where
+    onlyBit [b] = b
+    onlyBit _ = error "inferBool: the program does not return a bool"
 
 fromBits :: [Bool] -> Word8
-fromBits bs = foldr (\(i, b) acc -> if b then setBit acc i else acc) 0 (zip [0 ..] bs)
+fromBits bs = foldr (\(i, b) acc -> if b then setBit acc i else acc) 0 (zip [7, 6 .. 0] bs)
 
 -- | Every distribution the tool reports is normalized, unless it is empty.
 sumsToOne :: [(a, Rational)] -> Bool
@@ -362,7 +359,7 @@ prop_evalAgreesWithInfer =
   monadicIO $ do
     d <- run sampleIt
     forM_ [1 .. 4 :: Int] $ \k -> do
-      let got = maybe 0 id (lookup (fromIntegral k) d)
+      let got = fromMaybe 0 (lookup (fromIntegral k) d)
           want = 1 % (2 ^ k)
           -- Four standard deviations of a proportion at this sample size is
           -- under 0.015, so this is loose enough not to be flaky and tight
@@ -370,16 +367,9 @@ prop_evalAgreesWithInfer =
           off = abs (fromRational (got - want)) :: Double
       unless (off < 0.02) $
         fail ("P(i = " ++ show k ++ ") = " ++ show (fromRational got :: Double))
-      pure ()
   where
-    -- The annotation is what lets the type refined by the GADT match escape
-    -- the case alternative.
     sampleIt :: IO [(Word8, Rational)]
-    sampleIt =
-      case compile src of
-        AnyProg p@ReturnMult {} ->
-          map (first (fromBits . NE.toList)) <$> sampled trials p
-        _ -> error "prop_evalAgreesWithInfer: the program does not return a u8"
+    sampleIt = map (first fromBits) <$> sampled trials (compile src)
     trials = 20000 :: Int
     src =
       T.concat

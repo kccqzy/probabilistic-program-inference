@@ -11,8 +11,7 @@
 --
 -- Errors are reported as if they are parse errors.
 module Prob.TypeCheck
-  ( Env
-  , Checked(..)
+  ( Checked(..)
   , typeCheck
   ) where
 
@@ -31,8 +30,7 @@ import Text.Megaparsec (Parsec, registerParseError, Stream)
 type Env = M.Map T.Text Ty
 
 data Checked = Checked
-  { ckEnv :: Env
-  , ckProgram :: TyckedSProgram -- ^ With all-constant arithmetic folded away.
+  { ckProgram :: TyckedSProgram -- ^ With all-constant arithmetic folded away.
   , ckRetTy :: Maybe (NE.NonEmpty Ty) -- ^ The type of the @return@ expression, if any.
   } deriving (Eq, Show)
 
@@ -269,7 +267,6 @@ typeCheck p =
             ret <- (traverse . traverse) (checkExpr env) (spRet p)
             pure
               Checked
-                { ckEnv = env
-                , ckProgram = p {spStmts = stmts, spRet = (fmap . fmap) snd ret}
+                { ckProgram = p {spStmts = stmts, spRet = (fmap . fmap) snd ret}
                 , ckRetTy = ret >>= traverse fst
                 }
