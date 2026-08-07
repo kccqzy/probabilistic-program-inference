@@ -1,6 +1,4 @@
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE UndecidableInstances  #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StrictData #-}
@@ -13,11 +11,9 @@ module Prob.LinearEq
   ) where
 
 import Data.Array
-import Data.Proxy
 import Data.Foldable
 import Data.Graph (SCC(..), stronglyConnComp)
 import qualified Data.Map.Strict as M
-import Data.Reflection
 import qualified Data.Set as Set
 import Prob.Matrix
 
@@ -36,40 +32,6 @@ type Coeffs x = [Row x]
 
 -- | A sparse vector indexed by variables; a missing key denotes zero.
 type Vec x = M.Map x Rational
-
--- | The variables of the system in index order, reified so that the solver's
--- index type can recover a variable from its position with no separate map.
-newtype VarArr x = VarArr (Array Int x)
-
--- | The index type threaded through the star-semiring solver: a variable's
--- position — which drives the O(1) 'Ix' and 'Bounded' instances — paired with
--- the variable itself, so results read back without a lookup. The payload is
--- lazy (@~x@) so that 'minBound'/'maxBound' on an empty system never
--- dereference the (empty) 'VarArr'.
-data VarW x s = VarW !Int ~x
-
-instance Eq (VarW x s) where
-  VarW i _ == VarW j _ = i == j
-
-instance Ord (VarW x s) where
-  compare (VarW i _) (VarW j _) = compare i j
-
--- | The 'VarW' at a given position, its variable read from the reified array.
-varAt :: forall s x. Reifies s (VarArr x) => Int -> VarW x s
-varAt i = let VarArr a = reflect (Proxy :: Proxy s) in VarW i (a ! i)
-
-instance Reifies s (VarArr x) => Bounded (VarW x s) where
-  minBound = varAt 0
-  maxBound =
-    let VarArr a = reflect (Proxy :: Proxy s)
-     in varAt (snd (bounds a))
-
--- | Indices are ranked by position, so every 'Ix' operation is O(1) integer
--- arithmetic.
-instance Reifies s (VarArr x) => Ix (VarW x s) where
-  range (VarW lo _, VarW hi _) = map varAt [lo .. hi]
-  index (VarW lo _, _) (VarW i _) = i - lo
-  inRange (VarW lo _, VarW hi _) (VarW i _) = lo <= i && i <= hi
 
 -- | Compute the @target@ coordinate of the solutions of @x = A x + b@ for a
 -- whole collection of constant columns @b@ at once — supplied not as (dense)
@@ -138,10 +100,16 @@ solveRow rows target bs = combine
       foldl' (\s (j, y) -> M.insert j y s) sol (solveBlock sol (Set.fromList comp))
     solveBlock ::
          M.Map x (Compact Rational) -> Set.Set x -> [(x, Compact Rational)]
-    solveBlock sol compSet = reify (VarArr blockArr) g
+    solveBlock sol compSet = zip blockVars (elems arr)
       where
+        -- The component's variables in index order. 'elems' below comes back in
+        -- the same order, so the results pair up without a lookup.
+        blockVars :: [x]
+        blockVars = Set.toAscList compSet
+        n :: Int
+        n = Set.size compSet
         blockArr :: Array Int x
-        blockArr = listArray (0, Set.size compSet - 1) (Set.toAscList compSet)
+        blockArr = listArray (0, n - 1) blockVars
         rMap :: M.Map x (Compact Rational)
         rMap =
           M.fromSet
@@ -152,18 +120,13 @@ solveRow rows target bs = combine
                   | (i, c) <- M.toList (deps j)
                   , i `Set.notMember` compSet
                   ]) compSet
-        g :: forall s. Reifies s (VarArr x)
-          => Proxy s
-          -> [(x, Compact Rational)]
-        g _ = [(v, c) | (VarW _ v, c) <- assocs arr]
-          where
-            bMat :: Matrix (VarW x s) Rational
-            bMat =
-              matrixFromFunc $ \(VarW _ j, VarW _ i) ->
-                M.findWithDefault 0 i (deps j)
-            rVec :: Vector (VarW x s) (Compact Rational)
-            rVec = vectorFromFunc $ \(VarW _ j) -> rMap M.! j
-            Vector arr = star (fmap Real bMat) `mult` rVec
+        bMat :: Matrix Rational
+        bMat =
+          matrixFromFunc n $ \(rj, ri) ->
+            M.findWithDefault 0 (blockArr ! ri) (deps (blockArr ! rj))
+        rVec :: Vector (Compact Rational)
+        rVec = vectorFromFunc n $ \rj -> rMap M.! (blockArr ! rj)
+        Vector arr = starMatrix (fmap Real bMat) `mult` rVec
     combine :: Maybe (Vec k)
     combine =
       fmap (M.filter (/= 0)) $

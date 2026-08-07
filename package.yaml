@@ -12,7 +12,6 @@ dependencies:
 - transformers
 - containers >= 0.8 # non-allocating Ord IntSet (compareIntSets)
 - array
-- reflection
 - megaparsec >= 8.0.0 # registerParseError
 - parser-combinators >= 1.0.0
 - text

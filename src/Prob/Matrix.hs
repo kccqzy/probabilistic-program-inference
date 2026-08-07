@@ -14,35 +14,41 @@ extractCompact :: Compact a -> Maybe a
 extractCompact Inf = Nothing
 extractCompact (Real a) = Just a
 
--- | A matrix, which is an array of array of elements, indexed by i.
-newtype Matrix i e = Matrix (Array i (Array i e)) deriving Functor
+-- | A square matrix of dimension @n@, indexed by @0 .. n-1@ on both axes and
+-- stored flat in row-major order.
+--
+-- A previous version of this had a more elegant but slower design: it relies on
+-- an Ix and Bounded instances, and so the caller had to use reflection to
+-- construct an appropriate Bounded instance at run time, depending on the
+-- number of actual variables. This is found via profiling where the @index@
+-- method cost 8% of the run time in some cases.
+data Matrix e = Matrix Int (Array Int e) deriving Functor
 
-newtype Vector i e = Vector (Array i e) deriving Functor
+newtype Vector e = Vector (Array Int e) deriving Functor
 
-vectorFromFunc :: (Ix i, Bounded i) => (i -> e) -> Vector i e
-vectorFromFunc f = Vector $ listArray (minBound, maxBound) $ map f entireRange
+matrixDim :: Matrix e -> Int
+matrixDim (Matrix n _) = n
 
-matrixFromFunc :: (Ix i, Bounded i) => ((i, i) -> e) -> Matrix i e
-matrixFromFunc f =
-  Matrix $
-  listArray (minBound, maxBound) $
-  map (\i -> listArray (minBound, maxBound) $ map (\j -> f (i, j)) entireRange) entireRange
+-- | The entry at row @i@, column @j@.
+at :: Matrix e -> Int -> Int -> e
+at (Matrix n a) i j = a ! (i * n + j)
 
-mult :: (Ix i, Bounded i, StarSemiring e) => Matrix i e -> Vector i e -> Vector i e
-mult (Matrix a) (Vector b) = vectorFromFunc $ \i -> (a!i) `dot` b
-  where dot u v = srsum (zipWith (<.>) (elems u) (elems v))
+matrixFromFunc :: Int -> ((Int, Int) -> e) -> Matrix e
+matrixFromFunc n f =
+  Matrix n $
+  listArray (0, n * n - 1) [f (i, j) | i <- [0 .. n - 1], j <- [0 .. n - 1]]
 
-inverse :: (Eq a, Ix i, Bounded i, Fractional a) => Matrix i a -> Matrix i (Compact a)
-inverse m = star (one <+> fmap (Real . negate) m)
+vectorFromFunc :: Int -> (Int -> e) -> Vector e
+vectorFromFunc n f = Vector $ listArray (0, n - 1) (map f [0 .. n - 1])
 
--- Solve the equation x=ax+b
-solveAffine :: (Eq a, Ix i, Bounded i, Fractional a) => Matrix i a -> Vector i a -> Vector i (Compact a)
-solveAffine a b = star (fmap Real a) `mult` fmap Real b
-
-entireRange :: (Ix i, Bounded i) => [i]
-entireRange = range (minBound, maxBound)
+mult :: StarSemiring e => Matrix e -> Vector e -> Vector e
+mult m (Vector b) =
+  vectorFromFunc n $ \i -> srsum [at m i k <.> (b ! k) | k <- [0 .. n - 1]]
+  where
+    n = matrixDim m
 
 infixl 6 <+>
+
 infixl 7 <.>
 
 {- | A star semiring satisfies the following laws :
@@ -82,28 +88,22 @@ instance (Eq a, Num a, Fractional a) => StarSemiring (Compact a) where
   star (Real x) = Real (recip (1 - x))
   star Inf = Inf
 
-instance (Ix i, Bounded i, StarSemiring a) => StarSemiring (Matrix i a) where
-  zero = pure zero -- zero matrix
-  (<+>) = liftA2 (<+>) -- matrix addition
-  one = -- identity matrix
-    matrixFromFunc
-      (\(i, j) ->
-         if i == j
-           then one
-           else zero)
-  Matrix x <.> Matrix y = matrixFromFunc build -- matrix multiplication
-    where
-      build (i, j) = srsum [x ! i ! k <.> y ! k ! j | k <- entireRange]
-  star x = one <+> foldr f x entireRange -- matrix asteration
-    where
-      f k (Matrix m) = matrixFromFunc build
-        where
-          build (i, j) = m ! i ! j <+> m ! i ! k <.> star (m ! k ! k) <.> m ! k ! j
-
-instance (Ix i, Bounded i) => Applicative (Matrix i) where
-  pure x = matrixFromFunc (const x)
-  Matrix f <*> Matrix x = matrixFromFunc (\(i, j) -> (f ! i ! j) (x ! i ! j))
-  liftA2 f (Matrix ma) (Matrix mb) = matrixFromFunc (\(i, j) -> f (ma ! i ! j) (mb ! i ! j))
+-- | Matrix asteration, by the Kleene recurrence: pivot on each @k@ in turn,
+-- then add the identity. This is not a 'StarSemiring' instance because 'zero'
+-- and 'one' would each have to conjure a dimension out of nothing.
+starMatrix :: StarSemiring e => Matrix e -> Matrix e
+starMatrix m0 = addOne (foldr pivot m0 [0 .. n - 1])
+  where
+    n = matrixDim m0
+    pivot k m = matrixFromFunc n build
+      where
+        -- Loop-invariant in i and j, so it is named here rather than left in
+        -- 'build' for the simplifier to float out.
+        skk = star (at m k k)
+        build (i, j) = at m i j <+> at m i k <.> skk <.> at m k j
+    addOne m =
+      matrixFromFunc n $ \(i, j) ->
+        (if i == j then one else zero) <+> at m i j
 
 instance (Show a) => Show (Compact a) where
   show (Real a) = show a

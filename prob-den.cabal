@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: "/\216\225\144\253\viuKI{c\148b\ETB\154p\246\191\246\153\231t\143\&6 \aG\250d9{"
+-- hash: "I7\230\184?Hk\ETX$\147\223\SYNv\236\151\246\214\189\234im\235OK%\161\225\140\217\SIS/"
 
 name:           prob-den
 version:        0.1.0.0
@@ -27,7 +27,6 @@ library
     , mtl
     , mwc-random
     , parser-combinators >=1.0.0
-    , reflection
     , scientific >=0.3.6.0
     , text
     , transformers
@@ -64,7 +63,6 @@ executable prob
     , optparse-applicative
     , parser-combinators >=1.0.0
     , prob-den
-    , reflection
     , scientific >=0.3.6.0
     , text
     , transformers
@@ -86,7 +84,6 @@ test-suite desugar-test
     , mwc-random
     , parser-combinators >=1.0.0
     , prob-den
-    , reflection
     , scientific >=0.3.6.0
     , text
     , transformers
@@ -108,7 +105,6 @@ test-suite linear-eq-test
     , mwc-random
     , parser-combinators >=1.0.0
     , prob-den
-    , reflection
     , scientific >=0.3.6.0
     , text
     , transformers
