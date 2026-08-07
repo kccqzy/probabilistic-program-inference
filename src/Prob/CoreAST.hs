@@ -8,12 +8,15 @@ module Prob.CoreAST
   , Prog(..)
   , Sigma
   , sigmaInsert
+  , toIntProg
   , mkNot
   , mkAnd
   , mkOr
   , mkXor
   ) where
 
+import Data.Foldable
+import qualified Data.IntSet as IS
 import qualified Data.Set as Set
 import Data.String
 
@@ -57,18 +60,29 @@ data Stmt varTy
 -- | A program: the statements to run, and the booleans to return.
 data Prog varTy =
   [Stmt varTy] `ReturnMult` [Expr varTy]
-  deriving (Show, Foldable)
+  deriving (Show, Functor, Foldable, Traversable)
 
 instance IsString (Expr String) where
   fromString = Var
 
 -- | Sigma is just the set of all variables assignments. Since our language only
--- ever deals with Bool variables, we use a 'Set.Set' and the presence/absence
--- indicates their values.
-type Sigma vt = Set.Set vt
+-- ever deals with Bool variables, we use a set and the presence/absence
+-- indicates their values. The inference engines ('Prob.Den', 'Prob.Eval') run
+-- on programs whose variables are ints, so this is an 'IS.IntSet'. States are
+-- also used as map keys, so the comparison matters as much as the
+-- representation: we use @containers >= 0.8@ because that version improves
+-- performance of the Ord instance.
+type Sigma = IS.IntSet
 
-sigmaInsert :: Ord vt => vt -> Bool -> Sigma vt -> Sigma vt
-sigmaInsert x v = (if v then Set.insert else Set.delete) x
+sigmaInsert :: Int -> Bool -> Sigma -> Sigma
+sigmaInsert x v = (if v then IS.insert else IS.delete) x
+
+-- | Number the variables of a program. Each variable becomes its index in the
+-- sorted set of all variables occurring in the program.
+toIntProg :: Ord vt => Prog vt -> Prog Int
+toIntProg p = fmap (`Set.findIndex` vars) p
+  where
+    vars = Set.fromList (toList p)
 
 --------------------------------------------------------------------------------
 -- The expression simplifier

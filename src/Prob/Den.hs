@@ -13,6 +13,7 @@ import Control.Monad.State
 import Data.Bifunctor
 import Data.Foldable
 import qualified Data.IntMap.Strict as IM
+import qualified Data.IntSet as IS
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Set as Set
@@ -30,8 +31,8 @@ import qualified Prob.LinearEq as L
 -- kernel being evaluated pointwise at each of the 2^N possible ending states.
 type Distr s = M.Map s Rational
 
-denExpr :: (Show vt, Ord vt) => Expr vt -> Sigma vt -> Bool
-denExpr (Var x) sigma = Set.member x sigma
+denExpr :: Expr Int -> Sigma -> Bool
+denExpr (Var x) sigma = IS.member x sigma
 denExpr (Constant d) _ = d
 denExpr (Or a b) sigma = denExpr a sigma || denExpr b sigma
 denExpr (And a b) sigma = denExpr a sigma && denExpr b sigma
@@ -45,10 +46,10 @@ denExpr (Not a) sigma = not (denExpr a sigma)
 -- which is sound, and desirable for kernel-cache sharing because
 -- label-equal 'While' nodes are structurally identical and the loop kernel is
 -- solved independently of what follows the loop.
-data CurrentLoop vt = CurrentLoop
+data CurrentLoop = CurrentLoop
   { clLabel :: Int
-  , clSeenSigma :: Set.Set (Sigma vt)
-  , clEqns :: [(Sigma vt, Ret vt)]
+  , clSeenSigma :: Set.Set Sigma
+  , clEqns :: [(Sigma, Ret)]
   }
 
 -- | The state threaded through the denotation: the loop currently being
@@ -56,27 +57,27 @@ data CurrentLoop vt = CurrentLoop
 -- cache of already-solved loop kernels. Only 'dsCurrentLoop' is saved
 -- and restored around a loop solve; the footprints and the kernel cache
 -- only ever grows.
-data DenState vt = DenState
-  { dsCurrentLoop :: Maybe (CurrentLoop vt)
-  , dsFootprints :: IM.IntMap (Set.Set vt)
-  , dsKernels :: M.Map (Int, Sigma vt) (Distr (Sigma vt))
+data DenState = DenState
+  { dsCurrentLoop :: Maybe CurrentLoop
+  , dsFootprints :: IM.IntMap IS.IntSet
+  , dsKernels :: M.Map (Int, Sigma) (Distr Sigma)
   }
 
-type Den vt = State (DenState vt)
+type Den = State DenState
 
 -- | The denotation of a statement list: an (unnormalized) distribution over
 -- ending states, plus — while inside a loop — symbolic references to loop states
 -- (the 'L.Term's) that 'L.solveRow' later resolves. At the top level the
 -- reference list is empty and a 'Ret' is just a 'Distr'.
-data Ret vt = Ret (Distr (Sigma vt)) [L.Term (Sigma vt)]
+data Ret = Ret (Distr Sigma) [L.Term Sigma]
 
-scaleRet :: Rational -> Ret vt -> Ret vt
+scaleRet :: Rational -> Ret -> Ret
 scaleRet k (Ret d tms) = Ret (M.map (k *) d) [L.Term (k * b) y | L.Term b y <- tms]
 
-plusRet :: Ord vt => Ret vt -> Ret vt -> Ret vt
+plusRet :: Ret -> Ret -> Ret
 plusRet (Ret d1 t1) (Ret d2 t2) = Ret (M.unionWith (+) d1 d2) (t1 ++ t2)
 
-denStmt :: (Show vt, Ord vt) => [Stmt vt] -> Sigma vt -> Den vt (Ret vt)
+denStmt :: [Stmt Int] -> Sigma -> Den Ret
 denStmt [] sigma = pure (Ret (M.singleton sigma 1) [])
 denStmt ((x := e):next) sigma = denStmt next (sigmaInsert x (denExpr e sigma) sigma)
 denStmt ((x :~ Bernoulli theta):next) sigma = do
@@ -108,11 +109,11 @@ denStmt (loop@(While lbl e s):next) sigma = do
       fp <- case cachedFp of
           Just fp -> pure fp
           _ -> do
-            let fp = Set.fromList (toList e ++ concatMap toList s)
+            let fp = IS.fromList (toList e ++ concatMap toList s)
             modify (\ds -> ds { dsFootprints = IM.insert lbl fp (dsFootprints ds) })
             pure fp
-      let sigmaRelevant = Set.intersection sigma fp
-          sigmaIrrelevant = Set.difference sigma fp
+      let sigmaRelevant = IS.intersection sigma fp
+          sigmaIrrelevant = IS.difference sigma fp
       cached <- gets (M.lookup (lbl, sigmaRelevant) . dsKernels)
       kernel <- case cached of
           Just k -> pure k
@@ -138,7 +139,7 @@ denStmt (loop@(While lbl e s):next) sigma = do
             pure k
       rets <-
         traverse
-          (\(eps, w) -> scaleRet w <$> denStmt next (eps `Set.union` sigmaIrrelevant))
+          (\(eps, w) -> scaleRet w <$> denStmt next (eps `IS.union` sigmaIrrelevant))
           (M.toList kernel)
       pure (foldl' plusRet (Ret M.empty []) rets)
   where
@@ -151,21 +152,21 @@ denStmt (loop@(While lbl e s):next) sigma = do
                  fmap (\c -> c {clEqns = (loopSigma, r) : clEqns c}) (dsCurrentLoop ds)
               })
 
-runDenStmt :: (Show vt, Ord vt) => Sigma vt -> [Stmt vt] -> Distr (Sigma vt)
+runDenStmt :: Sigma -> [Stmt Int] -> Distr Sigma
 runDenStmt sigma stmts =
   extractDist
     (evalState
        (denStmt stmts sigma)
        (DenState Nothing IM.empty M.empty))
 
-extractDist :: Ret vt -> Distr (Sigma vt)
+extractDist :: Ret -> Distr Sigma
 extractDist (Ret d []) = d
 extractDist _ = error "extractDist: contains unsolved loop variables"
 
 -- | Run a program and evaluate its returned expressions in each ending state,
 -- adding together the probabilities of the states that agree on all of them.
-denProg :: (Show vt, Ord vt) => Prog vt -> [([Bool], Rational)]
-denProg p = renormalize . nonzeroes . M.toList . M.mapKeysWith (+) project $ runDenStmt Set.empty s
+denProg :: Prog Int -> [([Bool], Rational)]
+denProg p = renormalize . nonzeroes . M.toList . M.mapKeysWith (+) project $ runDenStmt IS.empty s
   where s `ReturnMult` es = optimizeProgram p
         project sigma = map (`denExpr` sigma) es
 

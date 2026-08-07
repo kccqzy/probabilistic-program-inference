@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: "O V7?\SI/\154z\157\244\177\201\248\235?\140:\US\235L\239:2B\219\138\220\164\255L+"
+-- hash: "/\216\225\144\253\viuKI{c\148b\ETB\154p\246\191\246\153\231t\143\&6 \aG\250d9{"
 
 name:           prob-den
 version:        0.1.0.0
@@ -22,7 +22,7 @@ library
   build-depends:
       array
     , base
-    , containers >=0.5.11
+    , containers >=0.8
     , megaparsec >=8.0.0
     , mtl
     , mwc-random
@@ -57,7 +57,7 @@ executable prob
   build-depends:
       array
     , base
-    , containers >=0.5.11
+    , containers >=0.8
     , megaparsec >=8.0.0
     , mtl
     , mwc-random
@@ -80,7 +80,7 @@ test-suite desugar-test
       QuickCheck
     , array
     , base
-    , containers >=0.5.11
+    , containers >=0.8
     , megaparsec >=8.0.0
     , mtl
     , mwc-random
@@ -102,7 +102,7 @@ test-suite linear-eq-test
       QuickCheck
     , array
     , base
-    , containers >=0.5.11
+    , containers >=0.8
     , megaparsec >=8.0.0
     , mtl
     , mwc-random

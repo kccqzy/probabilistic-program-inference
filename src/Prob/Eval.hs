@@ -18,7 +18,7 @@ import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import Control.Monad
 import Data.Ratio
-import qualified Data.Set as Set
+import qualified Data.IntSet as IS
 import Prob.CoreAST
 import System.Random.MWC
 import System.Random.MWC.Distributions
@@ -28,41 +28,41 @@ import System.Random.MWC.Distributions
 --------------------------------------------------------------------------------
 -- | The program state consists of a list of variable assignments and the state
 -- of the random number generator. All variables are global variables.
-type ProgState vt s = (Sigma vt, Gen s)
+type ProgState s = (Sigma, Gen s)
 
 -- | The evaluation monad.
-type Eval vt s = MaybeT (StateT (ProgState vt s) (ST s))
+type Eval s = MaybeT (StateT (ProgState s) (ST s))
 
-runE :: (forall s. Eval vt s a) -> IO (Maybe a)
-runE e = withSystemRandomST $ \rng -> evalStateT (runMaybeT e) (Set.empty, rng)
+runE :: (forall s. Eval s a) -> IO (Maybe a)
+runE e = withSystemRandomST $ \rng -> evalStateT (runMaybeT e) (IS.empty, rng)
 
 -- | Sample @t@ independent runs. The random number generator is threaded from
 -- one run to the next, but the variable assignment must not be: it is reset
 -- before each run, or a run would start from wherever its predecessor ended.
 -- (Only a program that reads a variable before assigning it can tell, which is
 -- why an all-boolean program that initializes everything never noticed.)
-runEs :: Int -> (forall s. Eval vt s a) -> IO [a]
+runEs :: Int -> (forall s. Eval s a) -> IO [a]
 runEs t e =
   withSystemRandomST $ \rng ->
     catMaybes <$>
     evalStateT
-      (replicateM t (modify (first (const Set.empty)) >> runMaybeT e))
-      (Set.empty, rng)
+      (replicateM t (modify (first (const IS.empty)) >> runMaybeT e))
+      (IS.empty, rng)
 
-evalExpr :: (Show vt, Ord vt) => Expr vt -> Eval vt s Bool
-evalExpr (Var x) = gets (Set.member x . fst)
+evalExpr :: Expr Int -> Eval s Bool
+evalExpr (Var x) = gets (IS.member x . fst)
 evalExpr (Constant d) = pure d
 evalExpr (Or a b) = liftA2 (||) (evalExpr a) (evalExpr b)
 evalExpr (And a b) = liftA2 (&&) (evalExpr a) (evalExpr b)
 evalExpr (Xor a b) = liftA2 (/=) (evalExpr a) (evalExpr b)
 evalExpr (Not a) = not <$> evalExpr a
 
-drawDist :: (Show vt, Ord vt) => Dist -> Eval vt s Bool
+drawDist :: Dist -> Eval s Bool
 drawDist (Bernoulli p) = do
   rng <- gets snd
   lift (bernoulli (fromRational p) rng)
 
-evalStmt :: (Show vt, Ord vt) => [Stmt vt] -> Eval vt s ()
+evalStmt :: [Stmt Int] -> Eval s ()
 evalStmt [] = pure ()
 evalStmt ((x := a):next) = do
   v <- evalExpr a
@@ -89,7 +89,7 @@ evalStmt s@(While _ e stmt:next) = do
     then evalStmt stmt >> evalStmt s
     else evalStmt next
 
-evalProg :: (Show vt, Ord vt) => Prog vt -> Eval vt s [Bool]
+evalProg :: Prog Int -> Eval s [Bool]
 evalProg (ReturnMult stmt exprs) = evalStmt stmt >> traverse evalExpr exprs
 
 --------------------------------------------------------------------------------
@@ -102,5 +102,5 @@ renormalize :: [(a, Int)] -> [(a, Rational)]
 renormalize l = fmap (fmap (\n -> fromIntegral n % fromIntegral tot)) l
   where tot = sum (map snd l)
 
-sampled :: (Show vt, Ord vt) => Int -> Prog vt -> IO [([Bool], Rational)]
+sampled :: Int -> Prog Int -> IO [([Bool], Rational)]
 sampled t prog = renormalize . tally <$> runEs t (evalProg prog)

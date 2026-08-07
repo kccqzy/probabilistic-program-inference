@@ -35,11 +35,15 @@ data Display
 handleProgPretty :: Prog Var -> Display -> Mode -> IO ShowS
 handleProgPretty p disp m = formatResult . render <$> results
   where
+    -- The engines run on numbered variables; the names are of no further use
+    -- here, because what comes back is indexed by the returned booleans.
+    p' :: Prog Int
+    p' = toIntProg p
     results :: IO [([Bool], Rational)]
     results =
       case m of
-        ModeDen -> pure (denProg p)
-        ModeEval t -> sampled t p
+        ModeDen -> pure (denProg p')
+        ModeEval t -> sampled t p'
     render :: [([Bool], Rational)] -> [(ShowS, Rational)]
     render =
       case disp of

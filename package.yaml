@@ -10,7 +10,7 @@ dependencies:
 - mwc-random
 - mtl
 - transformers
-- containers >= 0.5.11
+- containers >= 0.8 # non-allocating Ord IntSet (compareIntSets)
 - array
 - reflection
 - megaparsec >= 8.0.0 # registerParseError

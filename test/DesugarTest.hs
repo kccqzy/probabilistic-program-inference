@@ -18,12 +18,11 @@ import Data.Maybe
 import Data.Ratio
 import qualified Data.Text as T
 import Data.Word
-import Prob.CoreAST (Prog)
+import Prob.CoreAST (Prog, toIntProg)
 import Prob.Den (denProg)
 import Prob.Desugar
 import Prob.Eval (sampled)
 import Prob.Parse
-import Prob.SurfaceAST (Var)
 import System.Exit
 import Test.QuickCheck
 import Test.QuickCheck.Monadic
@@ -32,11 +31,11 @@ import Test.QuickCheck.Monadic
 -- Running a program written as source text
 --------------------------------------------------------------------------------
 
-compile :: T.Text -> Prog Var
+compile :: T.Text -> Prog Int
 compile src =
   case processText "<property>" src of
     Left e -> error ('\n' : e)
-    Right p -> desugarProgram (pgSurface p)
+    Right p -> toIntProg (desugarProgram (pgSurface p))
 
 -- | Infer a program that returns a u8. An empty result means every trace was
 -- rejected, which is what @never@ does on overflow.
