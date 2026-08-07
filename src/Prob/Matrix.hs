@@ -1,9 +1,13 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE StrictData #-}
 -- | Matrices as star semirings
 module Prob.Matrix where
 
+import Control.Monad (forM_)
 import Data.Array
+import Data.Array.Base (unsafeRead, unsafeWrite)
+import Data.Array.ST (newArray_, runSTArray, thaw)
 
 -- | Alexandroff one-point compactification.
 data Compact a
@@ -42,6 +46,7 @@ vectorFromFunc :: Int -> (Int -> e) -> Vector e
 vectorFromFunc n f = Vector $ listArray (0, n - 1) (map f [0 .. n - 1])
 
 mult :: StarSemiring e => Matrix e -> Vector e -> Vector e
+{-# SPECIALIZE mult :: Matrix (Compact Rational) -> Vector (Compact Rational) -> Vector (Compact Rational) #-}
 mult m (Vector b) =
   vectorFromFunc n $ \i -> srsum [at m i k <.> (b ! k) | k <- [0 .. n - 1]]
   where
@@ -71,9 +76,14 @@ class StarSemiring a where
   star :: a -> a
 
 srsum :: StarSemiring a => [a] -> a
+{-# SPECIALIZE srsum :: [Compact Rational] -> Compact Rational #-}
 srsum = foldr (<+>) zero
 
+-- Every caller in this program asterates over @Compact Rational@, but the
+-- instance is polymorphic and lives in another module, so we need to manually
+-- tell GHC to do this specialization.
 instance (Eq a, Num a, Fractional a) => StarSemiring (Compact a) where
+  {-# SPECIALIZE instance StarSemiring (Compact Rational) #-}
   zero = Real 0
   _ <+> Inf = Inf
   Inf <+> _ = Inf
@@ -88,22 +98,34 @@ instance (Eq a, Num a, Fractional a) => StarSemiring (Compact a) where
   star (Real x) = Real (recip (1 - x))
   star Inf = Inf
 
--- | Matrix asteration, by the Kleene recurrence: pivot on each @k@ in turn,
--- then add the identity. This is not a 'StarSemiring' instance because 'zero'
--- and 'one' would each have to conjure a dimension out of nothing.
+-- | Matrix asteration.
 starMatrix :: StarSemiring e => Matrix e -> Matrix e
-starMatrix m0 = addOne (foldr pivot m0 [0 .. n - 1])
+{-# SPECIALIZE starMatrix :: Matrix (Compact Rational) -> Matrix (Compact Rational) #-}
+starMatrix (Matrix n a0) = Matrix n $ runSTArray $ do
+  src0 <- thaw a0
+  dst0 <- newArray_ (0, n * n - 1)
+  final <- pivotAll [0 .. n - 1] src0 dst0
+  -- Adding the identity only touches the diagonal: off it the added entry is
+  -- 'zero', and @zero <+> x = x@ is a semiring law.
+  forM_ [0 .. n - 1] $ \i -> do
+    mii <- unsafeRead final (i * n + i)
+    let !v = one <+> mii
+    unsafeWrite final (i * n + i) v
+  pure final
   where
-    n = matrixDim m0
-    pivot k m = matrixFromFunc n build
-      where
-        -- Loop-invariant in i and j, so it is named here rather than left in
-        -- 'build' for the simplifier to float out.
-        skk = star (at m k k)
-        build (i, j) = at m i j <+> at m i k <.> skk <.> at m k j
-    addOne m =
-      matrixFromFunc n $ \(i, j) ->
-        (if i == j then one else zero) <+> at m i j
+    -- Two buffers, swapped after each pivot.
+    pivotAll [] src _ = pure src
+    pivotAll (k:ks) src dst = do
+      -- Loop-invariant in i and j.
+      skk <- star <$> unsafeRead src (k * n + k)
+      forM_ [0 .. n - 1] $ \i -> do
+        mik <- unsafeRead src (i * n + k)
+        forM_ [0 .. n - 1] $ \j -> do
+          mij <- unsafeRead src (i * n + j)
+          mkj <- unsafeRead src (k * n + j)
+          let !v = mij <+> mik <.> skk <.> mkj
+          unsafeWrite dst (i * n + j) v
+      pivotAll ks dst src
 
 instance (Show a) => Show (Compact a) where
   show (Real a) = show a
