@@ -25,11 +25,9 @@ do {
     moveCar1 := car2 != car1 + 1 and coin;
 
     count := count + 1;
-    car4 := car4 + moveCar4 as u8;
-    car3 := car3 + moveCar3 as u8;
-    car2 := car2 + moveCar2 as u8;
-    car1 := car1 + moveCar1 as u8;
-
-
+    if moveCar4 then { car4 := car4 + 1 }
+    if moveCar3 then { car3 := car3 + 1 }
+    if moveCar2 then { car2 := car2 + 1 }
+    if moveCar1 then { car1 := car1 + 1 }
 } while not (car4 == 8 and car3 == 7 and car2 == 6 and car1 == 5) and count <= 25;
 return count;
