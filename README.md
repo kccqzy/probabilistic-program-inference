@@ -36,7 +36,7 @@ useful to check the inference or if the inference is too slow.
 
 If you do not wish to compile, download a pre-compiled executable from
 the [GitHub release
-page](https://github.com/kccqzy/probabilistic-program-inference/releases/tag/v1.0).
+page](https://github.com/kccqzy/probabilistic-program-inference/releases/tag/v2.0).
 Releases are cut infrequently.
 
 ## Example Programs
