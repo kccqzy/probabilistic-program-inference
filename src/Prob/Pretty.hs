@@ -1,8 +1,7 @@
 -- | Print inference/evaluation results in a slightly pretty way
 module Prob.Pretty
-  ( Mode(..)
-  , Display(..)
-  , handleProgPretty
+  ( Display(..)
+  , prettyPrintResults
   ) where
 
 import Data.Bifunctor
@@ -14,12 +13,7 @@ import Data.Ratio
 import Data.Scientific
 import qualified Data.Text as T
 import Data.Word
-import Prob.CoreAST
-import Prob.Den (denProg)
-import Prob.Eval (sampled)
-import Prob.SurfaceAST (Ty(..), Var(..))
-
-data Mode = ModeDen | ModeEval Int
+import Prob.SurfaceAST (Ty(..))
 
 -- | How to read the booleans a program returns: what the type checker knows
 -- about them and the core program no longer does.
@@ -32,18 +26,9 @@ data Display
   | Returned (NE.NonEmpty Ty)
     -- ^ The surface types of the @return@ expressions.
 
-handleProgPretty :: Prog Var -> Display -> Mode -> IO ShowS
-handleProgPretty p disp m = formatResult . render <$> results
+prettyPrintResults :: [([Bool], Rational)] -> Display -> ShowS
+prettyPrintResults results disp = formatResult . render $ results
   where
-    -- The engines run on numbered variables; the names are of no further use
-    -- here, because what comes back is indexed by the returned booleans.
-    p' :: Prog Int
-    p' = toIntProg p
-    results :: IO [([Bool], Rational)]
-    results =
-      case m of
-        ModeDen -> pure (denProg p')
-        ModeEval t -> sampled t p'
     render :: [([Bool], Rational)] -> [(ShowS, Rational)]
     render =
       case disp of

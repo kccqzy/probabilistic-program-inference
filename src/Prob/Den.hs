@@ -18,7 +18,6 @@ import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Set as Set
 import Prob.CoreAST
-import Prob.CoreOpt
 import qualified Prob.LinearEq as L
 
 --------------------------------------------------------------------------------
@@ -166,9 +165,8 @@ extractDist _ = error "extractDist: contains unsolved loop variables"
 -- | Run a program and evaluate its returned expressions in each ending state,
 -- adding together the probabilities of the states that agree on all of them.
 denProg :: Prog Int -> [([Bool], Rational)]
-denProg p = renormalize . nonzeroes . M.toList . M.mapKeysWith (+) project $ runDenStmt IS.empty s
-  where s `ReturnMult` es = optimizeProgram p
-        project sigma = map (`denExpr` sigma) es
+denProg (s `ReturnMult` es) = renormalize . nonzeroes . M.toList . M.mapKeysWith (+) project $ runDenStmt IS.empty s
+  where project sigma = map (`denExpr` sigma) es
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]
 renormalize l = map (second (/tot)) l

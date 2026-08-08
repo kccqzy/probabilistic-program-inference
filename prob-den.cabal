@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: "I7\230\184?Hk\ETX$\147\223\SYNv\236\151\246\214\189\234im\235OK%\161\225\140\217\SIS/"
+-- hash: "}\176\206\183\173\162\"R\200\231{\195&\229\170\ETX\143c\130\176\229&\221\214\235\240RSp:Sc"
 
 name:           prob-den
 version:        0.1.0.0
@@ -57,6 +57,7 @@ executable prob
       array
     , base
     , containers >=0.8
+    , groom
     , megaparsec >=8.0.0
     , mtl
     , mwc-random

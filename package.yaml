@@ -27,6 +27,7 @@ executables:
     dependencies:
       - base
       - optparse-applicative
+      - groom
       - prob-den
 
 tests:
