@@ -54,9 +54,9 @@ Save the above text in a file, and run the inference tool on that file.
 The result is
 
 ```
-------------- ---
-"r" ->  true  1/2
-"r" -> false  1/2
+═════════════╤════
+"r" -> false │ 1/2
+"r" ->  true │ 1/2
 ```
 
 This means that, the inference engine determined that at the end of the
@@ -76,11 +76,11 @@ r2 ~ bernoulli 0.5;
 The inference tool reports:
 
 ```
----------------------------- ---
-"r1" ->  true "r2" ->  true  1/4
-"r1" -> false "r2" ->  true  1/4
-"r1" ->  true "r2" -> false  1/4
-"r1" -> false "r2" -> false  1/4
+════════════════════════════╤════
+"r1" -> false "r2" -> false │ 1/4
+"r1" -> false "r2" ->  true │ 1/4
+"r1" ->  true "r2" -> false │ 1/4
+"r1" ->  true "r2" ->  true │ 1/4
 ```
 
 ### Third Example
@@ -102,12 +102,12 @@ if r1 and r2 then {
 The inference tool reports thus:
 
 ```
------------------------------------------- ---
-"r1" ->  true "r2" ->  true "r3" ->  true  1/8
-"r1" ->  true "r2" ->  true "r3" -> false  1/8
-"r1" -> false "r2" ->  true "r3" -> false  1/4
-"r1" ->  true "r2" -> false "r3" -> false  1/4
-"r1" -> false "r2" -> false "r3" -> false  1/4
+══════════════════════════════════════════╤════
+"r1" -> false "r2" -> false "r3" -> false │ 1/4
+"r1" -> false "r2" ->  true "r3" -> false │ 1/4
+"r1" ->  true "r2" -> false "r3" -> false │ 1/4
+"r1" ->  true "r2" ->  true "r3" -> false │ 1/8
+"r1" ->  true "r2" ->  true "r3" ->  true │ 1/8
 ```
 
 Notice that this time the probability figures are different, and some
@@ -123,7 +123,7 @@ would like to figure out whether the number of times we flipped is even
 or odd.
 
 ```
-numberOfTimesOdd := false; // the last bit of a conceptual integer
+numberOfTimesOdd := false; 
 
 do {
    coin ~ bernoulli 0.5;
@@ -134,14 +134,13 @@ do {
 Running this through the tool gives this result:
 
 ```
--------------------------------------------- ---
-"coin" -> false "numberOfTimesOdd" ->  true  2/3
-"coin" -> false "numberOfTimesOdd" -> false  1/3
+════════════════════════════════════════════╤════
+"coin" -> false "numberOfTimesOdd" ->  true │ 2/3
+"coin" -> false "numberOfTimesOdd" -> false │ 1/3
 ```
 
 First notice that in all possible outcomes, the variable `coin` is
 always false, because if it were true, the loop would not terminate.
-
 
 Second notice that it gave a probability of 2/3 and 1/3. How so? Well,
 the probability that the number of times flipped is odd, is the sum of
@@ -224,9 +223,9 @@ would never terminate. Since the program terminated, x must have been
 false. So the loop body must be been run once. The tool thus reports:
 
 ```
--------------------------- ---
-"x" -> false "y" ->  true  1/4
-"x" -> false "y" -> false  3/4
+══════════════════════════╤════
+"x" -> false "y" -> false │ 3/4
+"x" -> false "y" ->  true │ 1/4
 ```
 
 ### Eighth Example
@@ -246,14 +245,63 @@ Unsurprisingly, this produces:
 ```
 ═════════════╤════
 "die" ->   1 │ 1/6
-"die" ->   3 │ 1/6
-"die" ->   5 │ 1/6
 "die" ->   2 │ 1/6
-"die" ->   6 │ 1/6
+"die" ->   3 │ 1/6
 "die" ->   4 │ 1/6
+"die" ->   5 │ 1/6
+"die" ->   6 │ 1/6
 ```
 
 ### Ninth Example
+
+Suppose that we randomly pick a number from a clock face (i.e. an
+integer from 1 to 12 inclusive). What can we say about the distance
+between these two numbers?
+
+```
+hour1, hour2, result2, result : u8[wrap];
+hour1 ~ uniform 1 12;
+hour2 ~ uniform 1 12;
+
+result := hour1 - hour2 + 12;
+if result >= 12 then {
+  result := result - 12
+}
+
+result2 := hour2 - hour1 + 12;
+if result2 >= 12 then {
+  result2 := result2 - 12
+}
+
+if result > result2 then {
+  result := result2;
+}
+return result;
+```
+
+(Note that we don't have min/max functions for now, and we also don't
+have modulo operations for now.)
+
+The tool reports:
+
+```
+════╤═════
+  1 │ 1/6
+  2 │ 1/6
+  3 │ 1/6
+  4 │ 1/6
+  5 │ 1/6
+  0 │ 1/12
+  6 │ 1/12
+```
+
+This result might be surprising if one has never pondered this before,
+but it actually makes sense. It's equivalent to fixing the first number
+at the top, and then randomly choosing the second number. Due to
+symmetry, the results from 1 to 5 each appear twice, and 0 or 6 each
+appears once.
+
+### Tenth Example
 
 Integers and uniform distributions are very powerful when used inside loops. For
 example, suppose we keep rolling a fair die while keeping track of the running
@@ -265,7 +313,7 @@ do {
     count := count + 1;
     die ~ uniform 1 6;
     sum := sum + die;
-} while sum <= 20;
+} while sum < 10;
 return count;
 ```
 
@@ -283,17 +331,16 @@ The tool reports:
   9 │ 53/10077696 (≈ 5.2e-6)
  10 │ 1/10077696 (≈ 0)
  ```
- 
-### Tenth Example
+
+### Eleventh Example
 
 Suppose there are four cars and eight spaces. Initially the cars are located
 in the left half of the spaces. At each iteration, each car flips a fair
 coin. When the coin is H and if there is a space in front, then the car moves
 forward by one space. How many iterations are needed to get all four cars in
-the right half? 
+the right half?
 
 ```
-
 car1, car2, car3, car4: u8;
 count: u8;
 coin: bool;
@@ -351,7 +398,7 @@ The tool reports:
   7 │ 1/65536 (≈ 1.52e-5)
 ```
 
-### Eleventh Example
+### Twelfth Example
 
 So far we've only played with one aspect of the probabilistic nature of
 the PPL, drawing from a distribution. The second aspect is observation.
@@ -374,15 +421,15 @@ The inference tool reports:
 
 ```
 ═══════════════════════════════════════════╤════
+"die1" ->   4 "die2" ->   6 "total" ->  10 │ 1/3
 "die1" ->   5 "die2" ->   5 "total" ->  10 │ 1/3
 "die1" ->   6 "die2" ->   4 "total" ->  10 │ 1/3
-"die1" ->   4 "die2" ->   6 "total" ->  10 │ 1/3
 ```
 
 The result says, there are three possibilities with equal probability: first
 roll 4, second roll 6; both rolls 5; first roll 6, second roll 4.
 
-### Twelfth Example
+### Thirteenth Example
 
 Using `observe` inside loops warrants a special example. An observation is
 always global. A failed observation is as if this execution has never happened.
