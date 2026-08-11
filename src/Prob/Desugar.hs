@@ -11,7 +11,6 @@ module Prob.Desugar
   )
 where
 
-import Control.Monad (replicateM)
 import Control.Monad.Trans.State.Strict
 import Data.Bits (shiftL, testBit)
 import Data.Foldable
@@ -220,10 +219,6 @@ emitStmt s0 =
       emit stmts
       emit [While lbl e' (toList stmts)]
 
--- | Store a bit vector into a u8 variable.
-storeBits :: T.Text -> [Expr Var] -> Seq.Seq (Stmt Var)
-storeBits x rs = Seq.fromList [U8Var x i := r | (i, r) <- zip [0 ..] rs]
-
 emitAssign :: T.Text -> TyckedSExpr -> D ()
 emitAssign x e =
   case sExprAnn e of
@@ -236,26 +231,34 @@ emitAssign x e =
           pure () -- self-assignment: a no-op
       | otherwise -> do
           rs <- lowerBits e
-          if mentions x e
-            -- The result bits read the ORIGINAL bits of the operands, so when
-            -- the target is itself an operand (`x := x + y`, `x := x + x`) they
-            -- must all be computed before any of them is stored.
-            then do
-              ts <- replicateM 8 freshTmp
-              emit $ Seq.fromList [t := r | (t, r) <- zip ts rs]
-              emit $ Seq.fromList [U8Var x i := Var t | (i, t) <- zip [0 ..] ts]
-            else emit (storeBits x rs)
+          -- For arithmetic, in case the variable to be assigned is mentioned in
+          -- the expression, it is more likely that we can avoid buffering bits
+          -- if we assign from MSB to LSB. Consider the common increment
+          -- expression (`x := x + 1`); if we assign from MSB to LSB then there
+          -- is no need for any temporary variables. So we assign from MSB to
+          -- LSB. We still have the detection in place in case temporaries are
+          -- needed.
+          irs' <- traverse buffer (zip [7, 6 .. 0] (reverse rs))
+          emit $ Seq.fromList [U8Var x i := r | (i, r) <- irs', r /= Var (U8Var x i)]
+  where
+    buffer ir@(i, r)
+      | any (readsTarget i) r = do
+          t <- freshTmp
+          emit [t := r]
+          pure (i, Var t)
+      | otherwise = pure ir
+    -- When we assign bits, we assign from MSB to LSB. So when assigning bit i,
+    -- we are allowed to read bits <= i. We just cannot read bits > i.
+    readsTarget i (U8Var y j) = y == x && j > i
+    readsTarget _ _ = False
 
 -- | A uniform integer distribution, desugared entirely into bernoulli coins.
 emitUniform :: T.Text -> (Word8, Word8) -> D ()
 emitUniform x (0, hi) = emit (uniformFromZero x 7 (toInteger hi))
 emitUniform x (lo, hi) = do
   emit (uniformFromZero x 7 (toInteger (hi - lo)))
-  let (res, _) = rippleAdd (constBits lo) [Var (U8Var x i) | i <- [0 .. 7]]
-  -- We know that we are adding a constant. Therefore every bit only depends on
-  -- bits lower than this bit. Instead of creating 8 temporaries like in
-  -- emitAssign, we can simply overwrite from the MSB to the LSB.
-  emit . Seq.reverse . Seq.fromList $ [U8Var x i := r | (r, i) <- zip res [0 .. 7], r /= Var (U8Var x i)]
+  let ty = TyU8 (Just Wrap)
+  emitAssign x (SAdd ty (SVar ty x) (SIntLit ty lo))
 
 uniformFromZero :: T.Text -> Int -> Integer -> Seq.Seq (Stmt Var)
 uniformFromZero x bit hi =

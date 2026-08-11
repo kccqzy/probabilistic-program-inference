@@ -25,7 +25,6 @@ module Prob.SurfaceAST
   , toSuperType
   , unifySem
   , reportedVars
-  , mentions
   ) where
 
 import qualified Data.List.NonEmpty as NE
@@ -195,7 +194,3 @@ reportedVars p
   | null (spDecls p) =
     [(x, TyBool) | x <- Set.toAscList (foldMap stmtVars (spStmts p))]
   | otherwise = M.toAscList (M.fromList [(dName d, dAnn d) | d <- spDecls p])
-
--- | Whether an expression mentions a given variable.
-mentions :: T.Text -> SExpr a -> Bool
-mentions x e = x `Set.member` exprVars e
