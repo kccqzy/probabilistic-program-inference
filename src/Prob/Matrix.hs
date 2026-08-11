@@ -11,7 +11,7 @@ import Data.Array.ST (newArray_, runSTArray, thaw)
 
 -- | Alexandroff one-point compactification.
 data Compact a
-  = Real a
+  = Real ~a
   | Inf
 
 extractCompact :: Compact a -> Maybe a
