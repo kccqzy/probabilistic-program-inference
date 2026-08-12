@@ -97,23 +97,23 @@ mkNot (Constant b) = Constant (not b)
 mkNot (Not e) = e
 mkNot e = Not e
 
-mkAnd :: Expr vt -> Expr vt -> Expr vt
+mkAnd :: Eq vt => Expr vt -> Expr vt -> Expr vt
 mkAnd (Constant False) _ = Constant False
 mkAnd _ (Constant False) = Constant False
 mkAnd (Constant True) e = e
 mkAnd e (Constant True) = e
-mkAnd a b = And a b
+mkAnd a b = if a == b then a else And a b
 
-mkOr :: Expr vt -> Expr vt -> Expr vt
+mkOr :: Eq vt => Expr vt -> Expr vt -> Expr vt
 mkOr (Constant True) _ = Constant True
 mkOr _ (Constant True) = Constant True
 mkOr (Constant False) e = e
 mkOr e (Constant False) = e
-mkOr a b = Or a b
+mkOr a b = if a == b then a else Or a b
 
-mkXor :: Expr vt -> Expr vt -> Expr vt
+mkXor :: Eq vt => Expr vt -> Expr vt -> Expr vt
 mkXor (Constant False) e = e
 mkXor e (Constant False) = e
 mkXor (Constant True) e = mkNot e
 mkXor e (Constant True) = mkNot e
-mkXor a b = Xor a b
+mkXor a b = if a == b then Constant False else Xor a b
