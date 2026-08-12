@@ -237,11 +237,10 @@ expr = makeExprParser terms operators
       ]
       where
         addOffset f p = f <$> (getOffset <* p)
-    parseCast :: Parser (ParsedSExpr -> ParsedSExpr)
-    parseCast = do
-      o <- getOffset <* keyword "as"
-      ty <- typeAnn
-      pure (\e -> SCast o e ty)
+        parseCast = do
+          sc <- addOffset SCast (keyword "as")
+          ty <- typeAnn
+          pure (`sc` ty)
     terms =
       parens expr <|> (SBoolLit <$> getOffset <*> (True <$ keyword "true")) <|>
       (SBoolLit <$> getOffset <*> (False <$ keyword "false")) <|>
