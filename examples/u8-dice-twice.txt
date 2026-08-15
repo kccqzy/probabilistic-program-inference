@@ -1,0 +1,4 @@
+d1, d2: u8;
+d1 ~ uniform 1 6;
+d2 ~ uniform 1 6;
+return d1 == d2 * 2;

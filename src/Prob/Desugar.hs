@@ -11,9 +11,11 @@ module Prob.Desugar
   )
 where
 
+import Control.Monad (foldM)
 import Control.Monad.Trans.State.Strict
 import Data.Bits (shiftL, testBit)
 import Data.Foldable
+import Data.List (foldl1')
 import Data.Ratio
 import qualified Data.Sequence as Seq
 import qualified Data.Text as T
@@ -40,6 +42,18 @@ freshTmp = state (\s -> (TmpVar (emNext s), s {emNext = emNext s + 1}))
 
 emit :: Seq.Seq (Stmt Var) -> D ()
 emit ss = modify (\s -> s {emOut = emOut s Seq.>< ss})
+
+-- | Bind an expression to a temporary and hand back a reference to it, so that
+-- reading it many times costs one variable rather than one copy of the tree
+-- each time. This is exempt if the original expression is a constant or a
+-- variable.
+share :: Expr Var -> D (Expr Var)
+share e@(Constant _) = pure e
+share e@(Var _) = pure e
+share e = do
+  t <- freshTmp
+  emit [t := e]
+  pure (Var t)
 
 -- | Run a sub-computation and hand back what it emitted instead of leaving it
 -- in the output. Used for a while guard, whose statements have to appear at
@@ -95,8 +109,9 @@ lowerBits = go
           as <- go a
           bs <- go b
           one (compareBits op as bs)
-        SAdd t a b -> arith rippleAdd mkOr (semOfArith t) a b
-        SSub t a b -> arith rippleSub (mkAnd . mkNot) (semOfArith t) a b
+        SAdd t a b -> arith (pureRipple rippleAdd) mkOr (semOfArith t) a b
+        SSub t a b -> arith (pureRipple rippleSub) (mkAnd . mkNot) (semOfArith t) a b
+        SMul t a b -> arith rippleMul mkOr (semOfArith t) a b
         SCast _ e ann ->
           case (ann, tyOf e) of
             (TyBool, TyU8 _) -> one . foldr1 mkOr =<< go e
@@ -111,12 +126,16 @@ lowerBits = go
       x <- bit a
       y <- bit b
       one (f x y)
+    -- Only the multiplier has to emit statements of its own; lifting the adder
+    -- and the subtractor lets 'arith' drive all three the same way.
+    pureRipple f as bs = pure (f as bs)
     -- @clampWith@ says what saturation does to a result bit given the overflow
-    -- bit: addition clamps to 255 (all bits set), subtraction clamps to 0.
+    -- bit: addition and multiplication clamp to 255 (all bits set),
+    -- subtraction clamps to 0.
     arith ripple clampWith sem a b = do
       as <- go a
       bs <- go b
-      let (rs, ovf) = ripple as bs
+      (rs, ovf) <- ripple as bs
       case sem of
         Wrap -> pure rs
         Never -> do
@@ -128,9 +147,8 @@ lowerBits = go
           -- The overflow bit goes into a temporary rather than being
           -- substituted into all eight result bits, which would multiply the
           -- expression size by eight.
-          o <- freshTmp
-          emit [o := ovf]
-          pure (map (clampWith (Var o)) rs)
+          ovf' <- share ovf
+          pure (map (clampWith ovf') rs)
 
 -- | Lower a bool-typed expression to the single expression it denotes.
 lowerBool :: TyckedSExpr -> D (Expr Var)
@@ -178,6 +196,33 @@ rippleSub as bs = ([mkXor (mkXor a b) c | ((a, b), c) <- zip ps borrows], last c
     cs = scanl step (Constant False) ps
     borrows = init cs
     step c (a, b) = mkOr (mkAnd (mkNot a) b) (mkAnd (mkNot (mkXor a b)) c)
+
+-- | Multiplication: the low eight bits of the product and the overflow bit.
+--
+-- The usual shift-and-add array, truncated to the lower 8 bits. Any higher bits
+-- contribute to the overflow bit, which is very common here.
+--
+-- Unlike 'rippleAdd' and 'rippleSub' this runs in 'D'. Every step reads each
+-- bit of the running accumulator repeatedly, so the bits are shared.
+rippleMul :: [Expr Var] -> [Expr Var] -> D ([Expr Var], Expr Var)
+rippleMul as bs = do
+  -- Each operand bit is read once per partial product, so we should have temp
+  -- variables for the operands.
+  as' <- traverse share as
+  bs' <- traverse share bs
+  foldM (step bs') (replicate 8 (Constant False), Constant False) (zip [0 ..] as')
+  where
+    step bs' (acc, discarded) (i, a) = do
+      -- The partial product @a_i * b@ sits at positions i..i+7. Only the bits
+      -- below position eight are added in. The rest are part of the overflow bit.
+      let (fits, lost) = splitAt (8 - i) [mkAnd a b | b <- bs']
+          (settled, live) = splitAt i acc
+          (sums, carry) = rippleAdd live fits
+      sums' <- traverse share sums
+      -- We do not share the overflow bit because it may well be unnecessary (in
+      -- case of wrap).
+      let ovf = foldl1' mkOr (carry : discarded : lost)
+      pure (settled ++ sums', ovf)
 
 --------------------------------------------------------------------------------
 -- Statement lowering

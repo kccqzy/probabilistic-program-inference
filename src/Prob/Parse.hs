@@ -222,6 +222,7 @@ expr = makeExprParser terms operators
   where
     operators =
       [ [Postfix parseCast]
+      , [InfixL (addOffset SMul (symbol "*"))]
       , [InfixL (addOffset SAdd (symbol "+")), InfixL (addOffset SSub (symbol "-"))]
       , [ InfixN (addOffset (`SCmp` CmpEq) (symbol "=="))
         , InfixN (addOffset (`SCmp` CmpNe) (symbol "!="))

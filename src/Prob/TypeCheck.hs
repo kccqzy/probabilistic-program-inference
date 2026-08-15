@@ -119,6 +119,7 @@ checkExpr env = go
         SCmp o op a b -> compareOp o op a b
         SAdd o a b -> arith o "+" SAdd (\x y -> toInteger x + toInteger y) a b
         SSub o a b -> arith o "-" SSub (\x y -> toInteger x - toInteger y) a b
+        SMul o a b -> arith o "*" SMul (\x y -> toInteger x * toInteger y) a b
         SCast _ e ann -> do
           (_, e') <- go e
           pure (Just ann, SCast ann e' ann)

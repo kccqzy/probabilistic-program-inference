@@ -1,0 +1,16 @@
+// The product of two fair dice. Unlike their sum, which is symmetric and
+// peaks in one place, the product is spread over the eighteen numbers that
+// factor into 1..6 twice, and it is lumpy: the numbers with the most
+// factorizations come out on top.
+//
+// 6 and 12 tie for the mode at 4/36 each -- 6 as 1*6, 2*3, 3*2, 6*1 and 12 as
+// 2*6, 3*4, 4*3, 6*2 -- while the four squares 1, 9, 16, 25 and 36 are
+// reachable one way only.
+
+d1, d2, product : u8[wrap];
+
+d1 ~ uniform 1 6;
+d2 ~ uniform 1 6;
+product := d1 * d2;
+
+return product;

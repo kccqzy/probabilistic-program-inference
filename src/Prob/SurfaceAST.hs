@@ -116,6 +116,7 @@ data SExpr a
   | SCmp a CmpOp (SExpr a) (SExpr a)
   | SAdd a (SExpr a) (SExpr a)
   | SSub a (SExpr a) (SExpr a)
+  | SMul a (SExpr a) (SExpr a)
   | SCast a (SExpr a) Ty
   deriving (Eq, Show)
 
@@ -133,6 +134,7 @@ sExprAnn (SXor o _ _) = o
 sExprAnn (SCmp o _ _ _) = o
 sExprAnn (SAdd o _ _) = o
 sExprAnn (SSub o _ _) = o
+sExprAnn (SMul o _ _) = o
 sExprAnn (SCast o _ _) = o
 
 data SDist
@@ -174,6 +176,7 @@ exprVars (SXor _ a b) = exprVars a `Set.union` exprVars b
 exprVars (SCmp _ _ a b) = exprVars a `Set.union` exprVars b
 exprVars (SAdd _ a b) = exprVars a `Set.union` exprVars b
 exprVars (SSub _ a b) = exprVars a `Set.union` exprVars b
+exprVars (SMul _ a b) = exprVars a `Set.union` exprVars b
 exprVars (SCast _ e _) = exprVars e
 
 -- | Every variable a statement touches, read or written.

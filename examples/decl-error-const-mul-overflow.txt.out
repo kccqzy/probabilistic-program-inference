@@ -1,0 +1,5 @@
+./examples/decl-error-const-mul-overflow.txt:5:9:
+  |
+5 | x := 20 * 20;
+  |         ^
+constant arithmetic goes outside u8: 20 * 20 = 400, which is not in 0..255

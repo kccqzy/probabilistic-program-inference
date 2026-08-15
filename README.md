@@ -491,6 +491,49 @@ tool gives different results:
  10 │ 1/1921 (≈ 0.0005205)
 ```
 
+### Fourteenth Example
+
+The product of two fair dice, which is a good deal lumpier than their sum.
+Where the sum is symmetric and peaks in one place, the product is spread over
+the eighteen numbers that factor into 1 to 6 twice, weighted by how many
+factorizations each has.
+
+```
+d1, d2, product : u8[wrap];
+
+d1 ~ uniform 1 6;
+d2 ~ uniform 1 6;
+product := d1 * d2;
+
+return product;
+```
+
+```
+════╤═════
+  6 │ 1/9
+ 12 │ 1/9
+  4 │ 1/12
+  2 │ 1/18
+  3 │ 1/18
+  5 │ 1/18
+  8 │ 1/18
+ 10 │ 1/18
+ 15 │ 1/18
+ 18 │ 1/18
+ 20 │ 1/18
+ 24 │ 1/18
+ 30 │ 1/18
+  1 │ 1/36
+  9 │ 1/36
+ 16 │ 1/36
+ 25 │ 1/36
+ 36 │ 1/36
+```
+
+6 and 12 tie for the mode with four factorizations each (1x6, 2x3, 3x2, 6x1
+and 2x6, 3x4, 4x3, 6x2), while the squares 1, 9, 16, 25 and 36 are reachable
+one way only.
+
 ## Language Guide
 
 The language has a fairly simple syntax, reminiscent of typical
@@ -507,8 +550,8 @@ The keywords of the language are `if`, `then`, `else`, `while`, `do`,
 used as identifiers.
 
 Special symbols are `(`, `)`, `{`, `}`, `[`, `]`, `;`, `,`, `:`, `:=`,
-`~`, `!`, `&&`, `^`, `||`, `+`, `-`, `==`, `!=`, `<`, `<=`, `>`, and
-`>=`.
+`~`, `!`, `&&`, `^`, `||`, `+`, `-`, `*`, `==`, `!=`, `<`, `<=`, `>`,
+and `>=`.
 
 Identifiers start with a letter, followed by zero of more alphanumeric
 characters.
@@ -527,6 +570,7 @@ The operators, from tightest to loosest:
 
 *   A postfix cast, `e as bool`, `e as u8`, or `e as u8[wrap]` and
     likewise for the other two overflow behaviors. Casts may be chained.
+*   `*`, left-associative.
 *   `+` and `-`, left-associative.
 *   The comparisons `==`, `!=`, `<`, `<=`, `>`, `>=`, which do not
     associate (`a < b < c` is a syntax error).
@@ -537,6 +581,8 @@ The operators, from tightest to loosest:
 
 Note that `not` binds *looser* than comparison, as it does in Python, so
 `not a == b` means `not (a == b)`, and `a + b < c` means `(a + b) < c`.
+`*` binds tighter than `+` and `-` as usual, so `a + b * c` is
+`a + (b * c)`.
 
 ### Statements Syntax
 
@@ -614,8 +660,8 @@ default, when the brackets are omitted, is `saturate`:
 
 *   `wrap`, where the result is taken modulo 256, as on ordinary hardware.
 
-*   `saturate`, where the result is clamped, to 255 when an addition
-    overflows and to 0 when a subtraction underflows.
+*   `saturate`, where the result is clamped, to 255 when an addition or a
+    multiplication overflows and to 0 when a subtraction underflows.
 
 *   `never`, where the overflow is asserted not to happen. It's like signed
     integers in C but better: instead of undefined behavior we get
@@ -628,14 +674,20 @@ Naturally, choosing different overflow semantics will result in different
 probabilities reported in programs that do experience overflow.
 
 *`u8[wrap]`, `u8[saturate]` and `u8[never]` are three distinct types.*
-The `+` and `-` operators require both operands to have exactly the same
-type. With `a : u8[wrap]` and `b : u8[saturate]`, the expression `a + b`
-is an error, and a cast on either operand says which was meant:
+The `+`, `-` and `*` operators require both operands to have exactly the
+same type. With `a : u8[wrap]` and `b : u8[saturate]`, the expression
+`a + b` is an error, and a cast on either operand says which was meant:
 
 ```
 a as u8[saturate] + b    // saturating addition
 a + b as u8[wrap]        // wrapping addition
+a as u8[wrap] * b        // wrapping multiplication
 ```
+
+Multiplication overflows far more readily than addition does: any two
+operands above 15 already leave 0..255, so which behavior applies is
+worth more thought than it is for `+`. `16 * 16` is 0 wrapping, 255
+saturating, and a rejected trace under `never`.
 
 There is no restriction on where arithmetic may appear. Even though the
 `never` behavior is implicitly an `observe` which is statement, such
@@ -672,6 +724,7 @@ the literal `10`. A result outside 0 to 255 is then an error:
 ```
 x : u8[wrap];
 x := 200 + 200;    // error: constant arithmetic goes outside u8
+x := 20 * 20;      // error: likewise, 400 does not fit
 ```
 
 A bare `as u8`, like a bare `u8` in a declaration, means `u8[never]`.

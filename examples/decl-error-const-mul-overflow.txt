@@ -1,0 +1,5 @@
+// Constant arithmetic is evaluated by the compiler and a result that does not
+// fit is a static error, not a silent wrap.
+x : u8[wrap];
+
+x := 20 * 20;

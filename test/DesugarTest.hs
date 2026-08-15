@@ -64,14 +64,21 @@ certainly v d = d == [(v, 1)]
 -- Arithmetic under each overflow semantics
 --------------------------------------------------------------------------------
 
-data Op = Add | Sub deriving (Eq, Show)
+data Op = Add | Sub | Mul deriving (Eq, Show)
 
 instance Arbitrary Op where
-  arbitrary = elements [Add, Sub]
+  arbitrary = elements [Add, Sub, Mul]
 
 opText :: Op -> T.Text
 opText Add = "+"
 opText Sub = "-"
+opText Mul = "*"
+
+-- | The operation on the integers, where it cannot overflow or underflow.
+opExact :: Op -> Word8 -> Word8 -> Integer
+opExact Add a b = toInteger a + toInteger b
+opExact Sub a b = toInteger a - toInteger b
+opExact Mul a b = toInteger a * toInteger b
 
 data Sem = Wrap | Saturate | Never deriving (Eq, Show)
 
@@ -152,10 +159,7 @@ prop_constantFolding op a b =
       | v < 0 || v > 255 = Nothing
       | otherwise = Just (fromInteger v)
       where
-        v =
-          if op == Add
-            then toInteger a + toInteger b
-            else toInteger a - toInteger b
+        v = opExact op a b
     -- Folded inside a larger expression, so that what is checked is the fold
     -- and not merely a literal being returned.
     src =
@@ -172,17 +176,17 @@ expected sem op a b =
   case sem of
     Wrap -> Just wrapped
     Saturate
-      | overflowed -> Just (if op == Add then 255 else 0)
+      -- Only subtraction can go below zero, and only addition and
+      -- multiplication above 255.
+      | overflowed -> Just (if op == Sub then 0 else 255)
       | otherwise -> Just wrapped
     Never
       | overflowed -> Nothing
       | otherwise -> Just wrapped
   where
-    wrapped = if op == Add then a + b else a - b
-    overflowed =
-      if op == Add
-        then toInteger a + toInteger b > 255
-        else toInteger a < toInteger b
+    v = opExact op a b
+    wrapped = fromInteger (v `mod` 256)
+    overflowed = v < 0 || v > 255
 
 -- | The operands are variables of the flavor under test, not literals: an
 -- operation on two literals is folded by the compiler and never reaches the
@@ -210,7 +214,7 @@ prop_arithAliased :: Op -> Word8 -> Word8 -> Property
 prop_arithAliased op a b =
   counterexample (T.unpack src) $ certainly v (inferU8 src)
   where
-    v = if op == Add then a + b else a - b
+    v = fromInteger (opExact op a b `mod` 256)
     src =
       T.concat
         [ "x, y : u8[wrap];\n"
@@ -251,6 +255,76 @@ prop_arithChain a b c =
         , "x := ", num a, " + p - q;\n"
         , "return x;\n"
         ]
+
+-- | @*@ binds tighter than @+@ and @-@, so @p + q * r@ is @p + (q * r)@ and
+-- not @(p + q) * r@. Everything wraps, so the answer is just the same
+-- expression evaluated in 'Word8'.
+prop_mulPrecedence :: Word8 -> Word8 -> Word8 -> Property
+prop_mulPrecedence a b c =
+  conjoin
+    [ counterexample (T.unpack (src e)) (property (certainly v (inferU8 (src e))))
+    | (e, v) <-
+        [ ("p + q * r", a + b * c)
+        , ("q * r + p", b * c + a)
+        , ("p - q * r", a - b * c)
+        , ("p * q - r", a * b - c)
+          -- Left-associative, which for @*@ alone is only observable through
+          -- the intermediate wrap.
+        , ("p * q * r", a * b * c)
+          -- Parentheses override it, and generally disagree with the above.
+        , ("(p + q) * r", (a + b) * c)
+        ]
+    ]
+  where
+    src e =
+      T.concat
+        [ "p, q, r, x : u8[wrap];\n"
+        , "p := ", num a, ";\nq := ", num b, ";\nr := ", num c, ";\n"
+        , "x := ", e, ";\nreturn x;\n"
+        ]
+
+-- | The multiplier and the adder have to agree with each other: multiplication
+-- distributes over addition, and doubling is adding to itself. Written as
+-- comparisons so the program checks itself.
+prop_mulAgreesWithAdd :: Word8 -> Word8 -> Word8 -> Property
+prop_mulAgreesWithAdd a b c =
+  conjoin
+    [ counterexample (T.unpack (src e)) (inferBool (src e) === [(True, 1)])
+    | e <-
+        [ "p * (q + r) == p * q + p * r"
+        , "p * 2 == p + p"
+        , "p * (q - r) == p * q - p * r"
+        , "p * q == q * p"
+        , "(p * q) * r == p * (q * r)"
+        , "p * 0 == 0"
+        , "p * 1 == p"
+        ]
+    ]
+  where
+    src e =
+      T.concat
+        [ "p, q, r : u8[wrap];\n"
+        , "p := ", num a, ";\nq := ", num b, ";\nr := ", num c, ";\n"
+        , "return ", e, ";\n"
+        ]
+
+-- | Under @never@, a multiplication that would leave 0..255 conditions the
+-- trace away exactly as an overflowing addition does, and one that fits leaves
+-- the program alone.
+prop_mulNever :: Word8 -> Word8 -> Property
+prop_mulNever a b =
+  counterexample (T.unpack src) $
+  if toInteger a * toInteger b > 255
+    then result === []
+    else property (certainly (a * b) result)
+  where
+    src =
+      T.concat
+        [ "p, q, x : u8[never];\n"
+        , "p := ", num a, ";\nq := ", num b, ";\n"
+        , "x := p * q;\nreturn x;\n"
+        ]
+    result = inferU8 src
 
 --------------------------------------------------------------------------------
 -- Comparisons and casts
@@ -387,6 +461,9 @@ main = do
       , run' 500 "arithmetic with an aliased target" prop_arithAliased
       , run' 500 "(a + b) - b == a when wrapping" prop_addSubRoundTrip
       , run' 300 "a chain of operations" prop_arithChain
+      , run' 300 "* binds tighter than + and -" prop_mulPrecedence
+      , run' 200 "the multiplier agrees with the adder" prop_mulAgreesWithAdd
+      , run' 500 "multiplication under never" prop_mulNever
       , run' 1000 "comparisons" prop_compare
       , run' 100 "comparisons on bools" prop_compareBool
       , run' 500 "constant arithmetic is folded, or a static error" prop_constantFolding

@@ -1,0 +1,25 @@
+// Multiplication, and what the three overflow behaviors do when the product
+// leaves 0..255.
+//
+// Two independent coins so all three can be seen at once: c decides whether
+// the wrapping and saturating products overflow, d whether the `never` one
+// does. The trace in which n would overflow is conditioned away, so d is
+// false with probability 1 and n is always 60. c stays free:
+//
+//   c true:  w = 100 * 3 = 300 wraps to 44,  s = 255 (clamped)   1/2
+//   c false: w = s = 20 * 3 = 60                                 1/2
+
+w : u8[wrap];
+s : u8[saturate];
+n : u8[never];
+c, d : bool;
+
+c ~ bernoulli 0.5;
+d ~ bernoulli 0.5;
+
+if c then { w := 100; s := 100; } else { w := 20; s := 20; }
+if d then { n := 100; } else { n := 20; }
+
+w := w * 3;
+s := s * 3;
+n := n * 3;
