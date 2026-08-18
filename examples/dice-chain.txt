@@ -1,0 +1,48 @@
+// Eight dice rolled one after another and added into a running total. Each die
+// is read exactly once, by the addition on the line below it, and is dead from
+// there on, so no two of them are ever wanted at the same time.
+//
+// Two things have to hold for this to finish, and the timing is the assertion
+// for both.
+//
+// The engine has to push the whole distribution through each statement rather
+// than walk one state at a time ('denStmts' in Prob.Den). There are 6^8 =
+// 1679616 execution paths through this program but never more than a few
+// hundred reachable states, and a walker that merges only on the way back up
+// pays for every path: this took five seconds when it worked that way.
+//
+// And the variables have to be numbered by liveness (Prob.Alloc). There is
+// nothing here for the slicer to remove -- every die genuinely feeds the
+// returned total -- and no loop, so nothing plants the `v := False` resets that
+// keep spent values from piling up. One number per variable therefore gives
+// every die eight bits of its own and leaves all eight spent values in the
+// state, so the state count picks up a factor of six per die that is never
+// given back. Sharing numbers lands them all on the same eight bits and each
+// roll overwrites the last one's leftovers: 13 registers rather than 41, and
+// 0.01s rather than 5.75s.
+//
+// examples/dice-chain-loop.txt is the same computation written as a loop, which
+// used to be the fast way round purely because the loop header was the one
+// place the old engine merged states before paying for them.
+
+d1, d2, d3, d4, d5, d6, d7, d8 : u8;
+total : u8;
+
+d1 ~ uniform 1 6;
+total := total + d1;
+d2 ~ uniform 1 6;
+total := total + d2;
+d3 ~ uniform 1 6;
+total := total + d3;
+d4 ~ uniform 1 6;
+total := total + d4;
+d5 ~ uniform 1 6;
+total := total + d5;
+d6 ~ uniform 1 6;
+total := total + d6;
+d7 ~ uniform 1 6;
+total := total + d7;
+d8 ~ uniform 1 6;
+total := total + d8;
+
+return total;

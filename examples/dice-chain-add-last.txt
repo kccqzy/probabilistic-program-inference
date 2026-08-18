@@ -1,0 +1,24 @@
+// Same as dice-chain.txt, but rearranged to put additions at the end.
+
+d1, d2, d3, d4, d5, d6, d7, d8 : u8;
+total : u8;
+
+d1 ~ uniform 1 6;
+d2 ~ uniform 1 6;
+d3 ~ uniform 1 6;
+d4 ~ uniform 1 6;
+d5 ~ uniform 1 6;
+d6 ~ uniform 1 6;
+d7 ~ uniform 1 6;
+d8 ~ uniform 1 6;
+
+total := total + d1;
+total := total + d2;
+total := total + d3;
+total := total + d4;
+total := total + d5;
+total := total + d6;
+total := total + d7;
+total := total + d8;
+
+return total;

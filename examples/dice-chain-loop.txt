@@ -1,0 +1,12 @@
+// Eight dice rolled one after another and added into a running total. Reference program for dice-chain.txt.
+
+i : u8;
+d, total : u8;
+
+while i < 8 do {
+d ~ uniform 1 6;
+total := total + d;
+i := i + 1;
+}
+
+return total;

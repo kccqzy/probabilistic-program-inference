@@ -1,0 +1,14 @@
+// Eight dice rolled one after another and added at the end.
+
+d1, d2, d3, d4, d5, d6, d7, d8 : u8;
+
+d1 ~ uniform 1 6;
+d2 ~ uniform 1 6;
+d3 ~ uniform 1 6;
+d4 ~ uniform 1 6;
+d5 ~ uniform 1 6;
+d6 ~ uniform 1 6;
+d7 ~ uniform 1 6;
+d8 ~ uniform 1 6;
+
+return d1 + d2 + d3 + d4 + d5 + d6 + d7 + d8;
