@@ -1,5 +1,10 @@
+-- | Optimize a program so that the inference runs faster. We do constant and
+-- copy propagation to eliminate some variables, and hopefully get the loop
+-- footprint smaller. Removing the statements that write to variables no one
+-- reads (slicing) lives in "Prob.Alloc", fused with the liveness analysis the
+-- register allocation runs anyway.
 module Prob.CoreOpt
-  ( optimizeProgram,
+  ( substituteProgram,
   )
 where
 
@@ -9,79 +14,6 @@ import qualified Data.Set as Set
 import Prob.CoreAST
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
-
--- | Optimize a program so that the inference runs faster. We do constant and
--- copy propagation to eliminate some variables, and hopefully get the loop
--- footprint smaller. Afterwards, we also remove statements that write to
--- variables that are unnecessary, starting backwards from the returned
--- variables. The idea is that if not all variables are returned, then we can
--- work backwards from the returned variable to remove all other variables that
--- do not influence the value of the returned variable. For loops however, we
--- insert assignments to dead variables (always False) at the end of the loop as
--- well as just before the loop to keep the number of program states small.
-optimizeProgram :: (Show vt, Ord vt) => Prog vt -> Prog vt
-optimizeProgram = sliceProgram . substituteProgram
-
-type Live vt = Set.Set vt
-
--- | Slice a program, simplifying it by removing statements that do not matter.
-sliceProgram :: Ord vt => Prog vt -> Prog vt
-sliceProgram (ReturnMult s es) = ReturnMult (evalState (sliceStmts s) (Set.fromList (foldMap toList es))) es
-
-sliceStmts :: Ord vt => [Stmt vt] -> State (Live vt) [Stmt vt]
-sliceStmts = foldrM step []
-  where
-    step s kept = (++ kept) <$> sliceStmt s
-
-sliceStmt :: Ord vt => Stmt vt -> State (Live vt) [Stmt vt]
-sliceStmt s =
-  case s of
-    -- An observe changes the normalization of the whole program, so it is
-    -- always kept.
-    Observe e ->
-      modify' (`Set.union` Set.fromList (toList e)) >> pure [s]
-    -- Every loop is kept. A loop that might diverge removes probability mass
-    -- conditioned on the state it was entered in, so deleting it changes the
-    -- answer even when nothing reads what it writes: @x ~ bernoulli 0.5; while
-    -- x do {}; return x@ answers "false with probability 1", but would answer
-    -- uniform were the loop sliced away.
-    While o e body -> do
-      slicedBody <- sliceLoop e body
-      let loopVars = Set.unions (Set.fromList (toList e) : map (Set.fromList .  toList) slicedBody)
-      resetVars <- gets (loopVars `Set.difference`)
-      let resetStmts = [v := Constant False | v <- Set.toList resetVars]
-      pure (resetStmts ++ [While o e (slicedBody ++ resetStmts)])
-    x := e -> do
-      isMember <- gets (x `Set.member`)
-      if isMember
-        then modify' ((`Set.union` Set.fromList (toList e)) . Set.delete x) >> pure [s]
-        else pure []
-    x :~ _ -> do
-      isMember <- gets (x `Set.member`)
-      if isMember
-        then modify' (Set.delete x) >> pure [s]
-        else pure []
-    If e s1 s2 -> do
-      live <- get
-      let (k1, l1) = runState (sliceStmts s1) live
-          (k2, l2) = runState (sliceStmts s2) live
-      if null k1 && null k2
-        then pure []
-        else put (Set.unions [Set.fromList (toList e), l1, l2]) >> pure [If e k1 k2]
-
-sliceLoop :: Ord vt => Expr vt -> [Stmt vt] -> State (Live vt) [Stmt vt]
-sliceLoop guard body = do
-  live0 <- gets (`Set.union` Set.fromList (toList guard))
-  let go = do
-        prevLive <- get
-        r <- sliceStmts body
-        modify' (`Set.union` live0)
-        nextLive <- get
-        if prevLive == nextLive -- Fixed point reached.
-          then pure r
-          else go
-  go
-
 
 -- | What a variable is known to equal: a constant or another variable (a copy).
 data VarIs vt = VarIsBool Bool | VarIsCopy vt deriving Eq

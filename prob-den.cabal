@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: "}\176\206\183\173\162\"R\200\231{\195&\229\170\ETX\143c\130\176\229&\221\214\235\240RSp:Sc"
+-- hash: "\136`uXe\r\ETB\ENQO\200\RS2\226\STX\139{:\145\145\223\163\206<\156\192\175\187Y\DC1h\144\r"
 
 name:           prob-den
 version:        0.1.0.0
@@ -31,6 +31,7 @@ library
     , text
     , transformers
   exposed-modules:
+      Prob.Alloc
       Prob.CoreAST
       Prob.CoreOpt
       Prob.Den

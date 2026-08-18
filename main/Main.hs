@@ -3,12 +3,14 @@ module Main
   ) where
 
 import Control.Monad
+import Data.Coerce
 import Options.Applicative
-import Prob.CoreAST (toIntProg)
+import Prob.Alloc (allocIntProg)
+import Prob.CoreAST (toIntProg, Prog)
 import Prob.CoreOpt
 import Prob.Den (denProg)
 import Prob.Eval (sampled)
-import Prob.SurfaceAST
+import Prob.SurfaceAST (reportedVars)
 import Prob.Desugar
 import Prob.Parse
 import Prob.Pretty
@@ -43,6 +45,12 @@ optimize = option (maybeReader p) (long "optimize" <> help "Whether to optimize 
 progs :: Parser [FilePath]
 progs = some (argument str (metavar "FILES..."))
 
+-- | This newtype is just to make the displayed result nicer.
+newtype Var = Var Int deriving Show
+
+toVarProg :: Prog Int -> Prog Var
+toVarProg = coerce
+
 run :: (Mode, Optimize, DumpCore, [FilePath]) -> IO ()
 run (m, Optimize opt, DumpCore dc, args) =
   forM_ args $ \f -> do
@@ -58,9 +66,10 @@ run (m, Optimize opt, DumpCore dc, args) =
                 -- @desugarProgram@ makes the same choice.
                 Nothing -> Columns (reportedVars (pgSurface p))
         let desugared = desugarProgram (pgSurface p)
-            optimized = if opt then optimizeProgram desugared else desugared
-        when dc $ hPutStrLn stderr (groom optimized)
-        let intProg = toIntProg optimized
+            intProg = if opt
+                      then allocIntProg (substituteProgram desugared)
+                      else toIntProg desugared
+        when dc $ hPutStrLn stderr (groom (toVarProg intProg))
         results <- case m of
           ModeDen -> pure (denProg intProg)
           ModeEval t -> sampled t intProg

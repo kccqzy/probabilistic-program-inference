@@ -18,7 +18,9 @@ import Data.Maybe
 import Data.Ratio
 import qualified Data.Text as T
 import Data.Word
+import Prob.Alloc (allocIntProg)
 import Prob.CoreAST (Prog, toIntProg)
+import Prob.CoreOpt (substituteProgram)
 import Prob.Den (denProg)
 import Prob.Desugar
 import Prob.Eval (sampled)
@@ -31,19 +33,32 @@ import Test.QuickCheck.Monadic
 -- Running a program written as source text
 --------------------------------------------------------------------------------
 
-compile :: T.Text -> Prog Int
+-- | The two forms the tool can hand to the inference engine: the plain
+-- one-number-per-variable numbering that @--optimize=false@ uses, and the
+-- optimized program numbered by liveness that @--optimize=true@ uses.
+compile :: T.Text -> (Prog Int, Prog Int)
 compile src =
   case processText "<property>" src of
     Left e -> error ('\n' : e)
-    Right p -> toIntProg (desugarProgram (pgSurface p))
+    Right p -> (toIntProg desugared, allocIntProg (substituteProgram desugared))
+      where
+        desugared = desugarProgram (pgSurface p)
+
+-- | Infer, insisting the two forms agree. Neither the optimizer nor the
+-- numbering may change a distribution, so every property below doubles as a
+-- check on them for the program it generates.
+infer :: T.Text -> [([Bool], Rational)]
+infer src =
+  let rs@(r1, r2) = bimap denProg denProg (compile src)
+  in if r1 == r2 then r1 else error ("the numberings disagree: " ++ show rs)
 
 -- | Infer a program that returns a u8. An empty result means every trace was
 -- rejected, which is what @never@ does on overflow.
 inferU8 :: T.Text -> [(Word8, Rational)]
-inferU8 src = [(fromBits bs, q) | (bs, q) <- denProg (compile src)]
+inferU8 src = [(fromBits bs, q) | (bs, q) <- infer src]
 
 inferBool :: T.Text -> [(Bool, Rational)]
-inferBool src = [(onlyBit bs, q) | (bs, q) <- denProg (compile src)]
+inferBool src = [(onlyBit bs, q) | (bs, q) <- infer src]
   where
     onlyBit [b] = b
     onlyBit _ = error "inferBool: the program does not return a bool"
@@ -442,7 +457,7 @@ prop_evalAgreesWithInfer =
         fail ("P(i = " ++ show k ++ ") = " ++ show (fromRational got :: Double))
   where
     sampleIt :: IO [(Word8, Rational)]
-    sampleIt = map (first fromBits) <$> sampled trials (compile src)
+    sampleIt = map (first fromBits) <$> sampled trials (fst (compile src))
     trials = 20000 :: Int
     src =
       T.concat
