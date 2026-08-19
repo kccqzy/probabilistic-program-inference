@@ -108,9 +108,9 @@ lowerBits = go
         SCmp _ op a b -> do
           as <- go a
           bs <- go b
-          one (compareBits op as bs)
-        SAdd t a b -> arith (pureRipple rippleAdd) mkOr (semOfArith t) a b
-        SSub t a b -> arith (pureRipple rippleSub) (mkAnd . mkNot) (semOfArith t) a b
+          compareBits op as bs >>= one
+        SAdd t a b -> arith rippleAdd mkOr (semOfArith t) a b
+        SSub t a b -> arith rippleSub (mkAnd . mkNot) (semOfArith t) a b
         SMul t a b -> arith rippleMul mkOr (semOfArith t) a b
         SCast _ e ann ->
           case (ann, tyOf e) of
@@ -126,9 +126,6 @@ lowerBits = go
       x <- bit a
       y <- bit b
       one (f x y)
-    -- Only the multiplier has to emit statements of its own; lifting the adder
-    -- and the subtractor lets 'arith' drive all three the same way.
-    pureRipple f as bs = pure (f as bs)
     -- @clampWith@ says what saturation does to a result bit given the overflow
     -- bit: addition and multiplication clamp to 255 (all bits set),
     -- subtraction clamps to 0.
@@ -161,53 +158,60 @@ onlyBit bs =
   error ("onlyBit: expected a bool, but got a " ++ show (length bs) ++ "-bit value")
 
 -- | Compare two bit vectors of equal width.
-compareBits :: CmpOp -> [Expr Var] -> [Expr Var] -> Expr Var
-compareBits op as bs =
+compareBits :: CmpOp -> [Expr Var] -> [Expr Var] -> D (Expr Var)
+compareBits op as bs = do
   case op of
-    CmpEq -> eq
-    CmpNe -> mkNot eq
+    CmpEq -> pure eq
+    CmpNe -> pure (mkNot eq)
     CmpLt -> lt as bs
-    CmpGe -> mkNot (lt as bs)
+    CmpGe -> mkNot <$> lt as bs
     CmpGt -> lt bs as
-    CmpLe -> mkNot (lt bs as)
+    CmpLe -> mkNot <$> lt bs as
   where
     eq = foldr1 mkAnd [mkNot (mkXor a b) | (a, b) <- zip as bs]
-    lt xs ys = snd (rippleSub xs ys)
+    lt xs ys = snd <$> rippleSub xs ys
 
 --------------------------------------------------------------------------------
 -- Ripple-carry arithmetic
 --------------------------------------------------------------------------------
 
+-- | Like 'scanl' from the standard library, but monadic.
+scanlM :: Monad m => (a -> t -> m a) -> a -> [t] -> m [a]
+scanlM f q ls =
+  case ls of
+    [] -> pure [q]
+    x:xs -> do
+      v <- f q x
+      vs <- scanlM f v xs
+      pure (q : vs)
+
+rippleAddSub :: (Expr Var -> (Expr Var, Expr Var) -> Expr Var)
+             -> [Expr Var]
+             -> [Expr Var]
+             -> D ([Expr Var], Expr Var)
+rippleAddSub step as bs = do
+  as' <- traverse share as
+  bs' <- traverse share bs
+  let ps = zip as' bs'
+  cs <- scanlM (\c ab -> share $ step c ab) (Constant False) ps
+  let carriesOrBorrows = init cs
+  pure ([mkXor (mkXor a b) c | ((a, b), c) <- zip ps carriesOrBorrows], last cs)
+
 -- | Addition: the sum bits and the carry out of the top bit (the overflow).
-rippleAdd :: [Expr Var] -> [Expr Var] -> ([Expr Var], Expr Var)
-rippleAdd as bs = ([mkXor (mkXor a b) c | ((a, b), c) <- zip ps carries], last cs)
-  where
-    ps = zip as bs
-    cs = scanl step (Constant False) ps
-    carries = init cs
-    step c (a, b) = mkOr (mkAnd a b) (mkAnd (mkXor a b) c)
+rippleAdd :: [Expr Var] -> [Expr Var] -> D ([Expr Var], Expr Var)
+rippleAdd = rippleAddSub (\ c (a, b) -> mkOr (mkAnd a b) (mkAnd (mkXor a b) c))
 
 -- | Subtraction in two's complement: the difference bits and the borrow out of
 -- the top bit (the underflow).
-rippleSub :: [Expr Var] -> [Expr Var] -> ([Expr Var], Expr Var)
-rippleSub as bs = ([mkXor (mkXor a b) c | ((a, b), c) <- zip ps borrows], last cs)
-  where
-    ps = zip as bs
-    cs = scanl step (Constant False) ps
-    borrows = init cs
-    step c (a, b) = mkOr (mkAnd (mkNot a) b) (mkAnd (mkNot (mkXor a b)) c)
+rippleSub :: [Expr Var] -> [Expr Var] -> D ([Expr Var], Expr Var)
+rippleSub = rippleAddSub (\ c (a, b) -> mkOr (mkAnd (mkNot a) b) (mkAnd (mkNot (mkXor a b)) c))
 
 -- | Multiplication: the low eight bits of the product and the overflow bit.
 --
 -- The usual shift-and-add array, truncated to the lower 8 bits. Any higher bits
 -- contribute to the overflow bit, which is very common here.
---
--- Unlike 'rippleAdd' and 'rippleSub' this runs in 'D'. Every step reads each
--- bit of the running accumulator repeatedly, so the bits are shared.
 rippleMul :: [Expr Var] -> [Expr Var] -> D ([Expr Var], Expr Var)
 rippleMul as bs = do
-  -- Each operand bit is read once per partial product, so we should have temp
-  -- variables for the operands.
   as' <- traverse share as
   bs' <- traverse share bs
   foldM (step bs') (replicate 8 (Constant False), Constant False) (zip [0 ..] as')
@@ -217,7 +221,7 @@ rippleMul as bs = do
       -- below position eight are added in. The rest are part of the overflow bit.
       let (fits, lost) = splitAt (8 - i) [mkAnd a b | b <- bs']
           (settled, live) = splitAt i acc
-          (sums, carry) = rippleAdd live fits
+      (sums, carry) <- rippleAdd live fits
       sums' <- traverse share sums
       -- We do not share the overflow bit because it may well be unnecessary (in
       -- case of wrap).
