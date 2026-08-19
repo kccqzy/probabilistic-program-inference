@@ -123,8 +123,11 @@ substituteStmts = (concat <$>) . traverse substituteStmt
 substituteStmt :: Ord vt => Stmt vt -> State (Known vt) [Stmt vt]
 substituteStmt (v := expr) = do
   expr' <- substituteExpr expr
+  known <- gets (M.lookup v)
   case expr' of
     Var u | u == v -> pure [] -- Assigning a variable to itself does nothing.
+          | known == Just (VarIsCopy u) -> pure [] -- Repeated assignment of the same variable.
+    Constant c | known == Just (VarIsBool c) -> pure [] -- Repeated assignmnt of the same constant.
     _ -> do
       modify' (forgetWrites (Set.singleton v))
       case expr' of
