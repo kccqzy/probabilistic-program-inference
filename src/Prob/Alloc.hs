@@ -1,17 +1,28 @@
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE TupleSections #-}
 
--- | Numbering the variables of a program so that variables whose values are
--- never simultaneously needed share a number. This is register allocation. We
--- use Chaitin's algorithm to do it: variables are split into webs, webs that
--- are never live at the same time are allowed to collide, and the resulting
--- interference graph is colored greedily.
+-- | Preparing a program for inference. Three things happen here, in this
+-- order: the statements of each block are reordered ("Scheduling"), the
+-- statements nobody reads are dropped ("Slicing and interference"), and the
+-- variables are numbered so that ones never simultaneously needed share a
+-- number ("Coloring").
 --
--- Slicing lives here too: dropping statements that write values no one reads,
--- and planting @:= False@ resets around loops to keep the number of program
--- states small. Slicing and interference are two clients of the same backward
--- liveness analysis, so one walk serves both, and the interference graph is
--- built for the sliced program — dead code does not manufacture edges.
+-- The numbering is register allocation, done by Chaitin's algorithm: variables
+-- are split into webs, webs that are never live at the same time are allowed to
+-- collide, and the resulting interference graph is colored greedily. Slicing
+-- also plants @:= False@ resets around loops so a dead web cannot carry
+-- differing junk into the loop head. Slicing and interference are two clients
+-- of the same backward liveness analysis, so one walk serves both, and the
+-- interference graph is built for the sliced program.
+--
+-- A word on what all of this is for, because it is easy to optimise the wrong
+-- thing. What we are trying to make small is the work 'Prob.Den' does, which is
+-- the number of (statement, state) pairs it handles. The number of variables
+-- that come out of the coloring is /not/ that quantity and is not a reliable
+-- proxy. Few variables are worth having because states are 'Prob.CoreAST.Sigma'
+-- values used as map keys, and because narrower states merge more often, but
+-- that makes the variable count a secondary constraint (i.e. the time
+-- complexity of Sigma operations).
 module Prob.Alloc
   ( allocIntProg,
   )
@@ -22,8 +33,10 @@ import Control.Monad.Trans.State.Strict
 import Data.Array (accum, assocs, (!))
 import Data.Bifunctor
 import Data.Foldable
+import Data.Graph (buildG, indegree)
 import qualified Data.IntMap.Strict as IM
 import qualified Data.IntSet as IS
+import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import Data.Ord (Down (..), comparing)
@@ -36,7 +49,7 @@ import Prob.CoreAST
 allocIntProg :: (Ord vt) => Prog vt -> Prog Int
 allocIntProg p = (colors M.!) <$> sliced
   where
-    (sliced, g) = sliceInterfere (webProg p)
+    (sliced, g) = sliceInterfere (scheduleProg (webProg p))
     colors = color g
 
 --------------------------------------------------------------------------------
@@ -157,6 +170,157 @@ webStmt (While o e body) = do
           then pure (While o e' body')
           else go
   go
+
+--------------------------------------------------------------------------------
+-- Scheduling
+--------------------------------------------------------------------------------
+
+-- | Reorder the statements of every block so that inference has less work to
+-- do.
+--
+-- Statements touching disjoint webs always commute, samples and loops included.
+-- The legal orders of a block are therefore the linear extensions of the
+-- partial order where two statements are ordered in the original written order
+-- if they share a web, and unordered otherwise. Sharing any web at all is
+-- treated as a dependence, which is a bit coarser than necessary but is safe.
+-- (I have difficulty formulating a more fine-grained treatment.)
+--
+-- We use a greedy algorithm to pick statements within a block, because doing it
+-- exactly is NP-hard. The greedy algorithm essentially picks the most highly
+-- ranked statement with the following goal of minimizing the amount of state,
+-- roughly speaking. This is roughly measured by the number of program states
+-- (Distr) handled each time a statement is handled. It must be noted that this
+-- is not the total number of variables; the total number of variables only
+-- affect the cost of IntSet lookups, inserts, and compares, and it is a tiny
+-- factor. This is how each statement is ranked:
+--
+-- * @x :~ Bernoulli p@ splits every state in two, so in the worst case it
+--   doubles the number of states and is the /only/ statement kind that can grow
+--   it.
+--
+-- * @x := e@ applies a function to each state. It can never grow the number of
+--   states, and shrinks it whenever two states are mapped together which is
+--   common.
+--
+-- * @observe e@ deletes states, so in the best case it shrinks states, and in
+--   the worst case it just keeps things the same.
+--
+-- * A statement that uses a web lets that web die. Two states differing only in
+--   a dead web become one after coloring, so deaths shrink the support too.
+--   This is what the cut is tracking.
+--
+-- Therefore we do this:
+--
+-- 1. __Observes first.__ An observe costs one pass over the distribution it is
+--    handed and deletes states from it.
+--
+-- 2. __Then anything that does not introduce randomness.__ Deferring a :~
+--    means every deterministic statement that does not depend on it runs
+--    before the split rather than after, at half the cost.
+--
+-- 3. __Then the smallest cut.__ Among statements that are alike in the two
+--    respects above, prefer the one leaving fewest webs live, which is the one
+--    most likely to have merged states by killing something.
+--
+-- 4. __Then the most webs already live.__ Finish a chain that has been started
+--    before beginning an unrelated one, rather than leaving several half-built.
+--
+-- 5. __Finally whichever was written first.__ When we can't decide, let the
+--    user decide. The pass is deterministic.
+scheduleProg :: (Ord w) => Prog w -> Prog w
+scheduleProg (ReturnMult ss es) = ReturnMult (snd (scheduleStmts (Set.fromList (foldMap toList es)) ss)) es
+
+-- | @scheduleStmts out ss@ schedules a block whose live-out set is @out@,
+-- returning its live-in set alongside.
+scheduleStmts :: (Ord w) => Set.Set w -> [Stmt w] -> (Set.Set w, [Stmt w])
+scheduleStmts out ss = (liveIn, greedy)
+  where
+    (liveIn, nested) = foldr (\s (l, acc) -> (: acc) <$> scheduleStmt l s) (out, []) ss
+    -- Scheduling is just reordering the statements, and so it will not change
+    -- the live set. So it is safe to do the liveIn computation first, and
+    -- reordering the statements won't change the live set.
+
+    stmts = IM.fromDistinctAscList (zip [0 ..] nested)
+    webs = Set.fromList . toList <$> stmts
+    -- The dependence order graph.
+    deps =
+      buildG (0, IM.size webs - 1) $
+        [ (i, j)
+        | (j, wj) <- IM.toList webs,
+          (i, wi) <- IM.toList (fst (IM.split j webs)),
+          not (Set.disjoint wi wj)
+        ]
+    indeg = indegree deps
+    uses = M.unionsWith (+) (M.fromSet (const (1 :: Int)) <$> IM.elems webs)
+    orderingPreferences = orderingPreference <$> stmts
+
+    greedy = (stmts IM.!) <$> go (IS.fromList [i | (i, 0) <- assocs indeg]) indeg (Set.filter stillLive liveIn) uses
+      where
+        stillLive w = w `Set.member` out || w `M.member` uses
+    go ready waiting open remaining
+      | IS.null ready = []
+      | otherwise = pick : go ready' waiting' open' remaining'
+      where
+        commit i = (Set.filter stillLive (open `Set.union` wi), left, Set.size (Set.intersection wi open))
+          where
+            wi = webs IM.! i
+            left = MM.merge MM.preserveMissing MM.dropMissing (MM.zipWithMaybeMatched (\_ c _ -> if c == 1 then Nothing else Just (c - 1))) remaining (M.fromSet (const ()) wi)
+            stillLive w = w `Set.member` out || w `M.member` left
+        (pick, (open', remaining', _)) =
+          minimumBy (comparing (\(i, (o, _, shared)) -> (orderingPreferences IM.! i, Set.size o, Down shared, i))) [(i, commit i) | i <- IS.toList ready]
+        released = deps ! pick
+        waiting' = accum (+) waiting [(j, -1) | j <- released]
+        ready' = IS.delete pick ready `IS.union` IS.fromList (filter ((== 0) . (waiting' !)) released)
+
+-- | The order we pick a statement based on what a statement can do to the
+-- number of states in the distribution. The 'Ord' instance is the order of
+-- preference.
+data OrderingPreference = PreferEarly | Neutral | PreferLate deriving (Eq, Ord)
+
+instance Semigroup OrderingPreference where
+  (<>) = max
+  stimes = stimesIdempotentMonoid
+
+instance Monoid OrderingPreference where
+  mconcat = go PreferEarly
+    where
+      -- This is basically 'Data.Foldable.maximum' but safe on empty lists and has
+      -- early exit.
+      go acc [] = acc
+      go PreferLate _ = PreferLate
+      go acc (x : xs) = go (max acc x) xs
+
+-- | Classify a statement.
+orderingPreference :: Stmt w -> OrderingPreference
+orderingPreference s = case s of
+  Observe _ -> PreferEarly
+  _ :~ _ -> PreferLate
+  _ := _ -> Neutral
+  If _ s1 s2 ->
+    -- Written this way to avoid ++.
+    mconcat (mconcat (map orderingPreference s1) : map orderingPreference s2)
+  While _ _ ss -> mconcat (map orderingPreference ss)
+
+-- | Schedule the blocks nested in a statement, and report the statement's
+-- live-in set given its live-out set. This is ordinary backward liveness; it
+-- exists separately from the one in 'sliceInterfere' because that one needs to
+-- build the interference graph as it goes. TODO: Find a way to dedup this nicely.
+scheduleStmt :: (Ord w) => Set.Set w -> Stmt w -> (Set.Set w, Stmt w)
+scheduleStmt out s@(x := e) = (Set.delete x out `Set.union` Set.fromList (toList e), s)
+scheduleStmt out s@(x :~ _) = (Set.delete x out, s)
+scheduleStmt out s@(Observe e) = (out `Set.union` Set.fromList (toList e), s)
+scheduleStmt out (If e s1 s2) = (Set.unions [Set.fromList (toList e), l1, l2], If e s1' s2')
+  where
+    (l1, s1') = scheduleStmts out s1
+    (l2, s2') = scheduleStmts out s2
+scheduleStmt out (While o e body) = (header, While o e body')
+  where
+    live0 = out `Set.union` Set.fromList (toList e)
+    (header, body') = go live0
+    go l =
+      let (l', b) = scheduleStmts l body
+          next = l' `Set.union` live0
+       in if next == l then (l, b) else go next
 
 --------------------------------------------------------------------------------
 -- Slicing and interference
