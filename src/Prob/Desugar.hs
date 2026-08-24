@@ -258,11 +258,11 @@ emitStmt s0 =
       -- prelude has to appear at both of those points. A `never` overflow in a
       -- guard therefore conditions the program once per evaluation, and the
       -- rejections compound across iterations.
-      (guardStmts, e') <- capture (lowerBool e)
+      (guardStmts, e') <- capture (lowerBool e >>= share)
       emit guardStmts
       emit [While lbl e' (toList (desugarStmts body Seq.>< guardStmts))]
     SDoWhile lbl body e -> do
-      (guardStmts, e') <- capture (lowerBool e)
+      (guardStmts, e') <- capture (lowerBool e >>= share)
       let desugaredBody = desugarStmts body
           stmts = desugaredBody Seq.>< guardStmts
       emit stmts
