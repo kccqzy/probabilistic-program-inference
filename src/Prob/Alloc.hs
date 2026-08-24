@@ -43,11 +43,12 @@ import Data.Ord (Down (..), comparing)
 import Data.Semigroup (Semigroup (..), stimesIdempotentMonoid)
 import qualified Data.Set as Set
 import Prob.CoreAST
+import Prob.CoreOpt (substituteProgram)
 
 -- | Slice a program and number its variables, letting variables share a
 -- number when their values are never wanted at the same time.
 allocIntProg :: (Ord vt) => Prog vt -> Prog Int
-allocIntProg p = (colors M.!) <$> sliced
+allocIntProg p = substituteProgram ((colors M.!) <$> sliced)
   where
     (sliced, g) = sliceInterfere (scheduleProg (webProg p))
     colors = color g
