@@ -5,6 +5,8 @@
 -- | Denotational semantics using traditional normalized/unnormalized semantics.
 module Prob.Den
   ( denProg
+  , denProgStats
+  , InferStats(..)
   ) where
 
 import Control.Monad
@@ -49,15 +51,40 @@ data CurrentLoop = CurrentLoop
   , clEqns :: [(Sigma, Ret)]
   }
 
+-- | What inference actually cost, as opposed to what a static estimate of it
+-- predicted. 'denStmts' pushes a whole distribution through one statement at a
+-- time, so the time it takes is very nearly proportional to 'isStatesPushed':
+-- the number of (statement, state) pairs it worked on.
+--
+-- When doing optimization work, the stats here are probably more useful than
+-- say, the number of variables.
+data InferStats = InferStats
+  { -- | Statements handled, counting each one once per time it is run:
+    -- a loop unrolled many times is counted many times.
+    isStmtsRun :: Int
+    -- | The number of states handled. Each time denStmt runs a statement, it
+    -- may handle multiple states at once.
+  , isStatesPushed :: Int
+    -- | The largest distribution any single statement saw. Related to the peak
+    -- live set, which bounds it above by two to the power of the live count.
+  , isLargestDistr :: Int
+    -- | Loop kernels solved. Each one is a linear system, and they are cached
+    -- per (loop, entry state), so this counts distinct entry states reached.
+  , isKernelsSolved :: Int
+  } deriving Show
+
 -- | The state threaded through the denotation: the loop currently being
--- unrolled (if any), the footprint of every loop in the program, and the
--- cache of already-solved loop kernels. Only 'dsCurrentLoop' is saved
--- and restored around a loop solve; the footprints and the kernel cache
--- only ever grows.
+-- unrolled (if any), the footprint of every loop in the program, the
+-- cache of already-solved loop kernels, and the running cost counters. Only
+-- 'dsCurrentLoop' is saved and restored around a loop solve; the footprints,
+-- the kernel cache and the counters only ever grow.
 data DenState = DenState
   { dsCurrentLoop :: Maybe CurrentLoop
   , dsFootprints :: IM.IntMap IS.IntSet
   , dsKernels :: M.Map (Int, Sigma) (Distr Sigma)
+  , dsStmtsRun :: Int
+  , dsStatesPushed :: Int
+  , dsLargestDistr :: Int
   }
 
 type Den = State DenState
@@ -84,17 +111,30 @@ denStmts _ d | M.null d =
                -- Nothing left to push. This is caused by a failed observe.
                pure (Ret M.empty [])
 denStmts [] d = pure (Ret d [])
-denStmts ((x := e):next) d =
+denStmts (s:next) d = updateStats (M.size d) >> denStmt s next d
+
+updateStats :: Int -> Den ()
+updateStats n =
+  modify'
+    (\ds ->
+       ds
+         { dsStmtsRun = dsStmtsRun ds + 1
+         , dsStatesPushed = dsStatesPushed ds + n
+         , dsLargestDistr = max (dsLargestDistr ds) n
+         })
+
+denStmt :: Stmt Int -> [Stmt Int] -> Distr Sigma -> Den Ret
+denStmt (x := e) next d =
   denStmts next (mergeDistr (\sigma -> sigmaInsert x (denExpr e sigma) sigma) d)
-denStmts ((x :~ Bernoulli theta):next) d =
+denStmt (x :~ Bernoulli theta) next d =
   -- Here, we ensure that no matter which branch is taken, the rest of the
   -- program is handled once, not twice.
   denStmts next (M.union (branch theta True) (branch (1 - theta) False))
   where
     branch w v = mergeDistr (sigmaInsert x v) ((*w) <$> d)
-denStmts (Observe e:next) d = -- requires renormalization at the end
+denStmt (Observe e) next d = -- requires renormalization at the end
   denStmts next (M.filterWithKey (\sigma _ -> denExpr e sigma) d)
-denStmts (If e s1 s2:next) d = do
+denStmt (If e s1 s2) next d = do
   let (dThen, dElse) = M.partitionWithKey (\sigma _ -> denExpr e sigma) d
   rThen <- denStmts s1 dThen
   rElse <- denStmts s2 dElse
@@ -103,7 +143,7 @@ denStmts (If e s1 s2:next) d = do
     _ -> error "internal error: loop terms escaped; loops should not be desugared via If"
   where
     plusRet (Ret d1 t1) (Ret d2 t2) = Ret (M.unionWith (+) d1 d2) (t1 ++ t2)
-denStmts (loop@(While lbl e s):next) d = do
+denStmt loop@(While lbl e s) next d = do
   cl <- gets dsCurrentLoop
   case cl of
     Just current
@@ -184,12 +224,20 @@ denStmts (loop@(While lbl e s):next) d = do
       modify' (overCurrentLoop (\c -> c {clEqns = (loopSigma, r) : clEqns c}))
     overCurrentLoop f ds = ds {dsCurrentLoop = f <$> dsCurrentLoop ds}
 
-runDenStmt :: Sigma -> [Stmt Int] -> Distr Sigma
-runDenStmt sigma stmts =
-  extractDist
-    (evalState
-       (denStmts stmts (M.singleton sigma 1))
-       (DenState Nothing IM.empty M.empty))
+runDenStmt :: Sigma -> [Stmt Int] -> (Distr Sigma, InferStats)
+runDenStmt sigma stmts = (extractDist r, stats)
+  where
+    (r, ds) =
+      runState
+        (denStmts stmts (M.singleton sigma 1))
+        (DenState Nothing IM.empty M.empty 0 0 0)
+    stats =
+      InferStats
+        { isStmtsRun = dsStmtsRun ds
+        , isStatesPushed = dsStatesPushed ds
+        , isLargestDistr = dsLargestDistr ds
+        , isKernelsSolved = M.size (dsKernels ds)
+        }
 
 extractDist :: Ret -> Distr Sigma
 extractDist (Ret d []) = d
@@ -198,8 +246,16 @@ extractDist _ = error "extractDist: contains unsolved loop variables"
 -- | Run a program and evaluate its returned expressions in each ending state,
 -- adding together the probabilities of the states that agree on all of them.
 denProg :: Prog Int -> [([Bool], Rational)]
-denProg (s `ReturnMult` es) = renormalize . nonzeroes . M.toList . M.mapKeysWith (+) project $ runDenStmt IS.empty s
-  where project sigma = map (`denExpr` sigma) es
+denProg = fst . denProgStats
+
+-- | 'denProg', also reporting what the run cost. Forcing the 'InferStats'
+-- forces the whole inference, so a caller that wants both should print the
+-- results first if it wants them to stream.
+denProgStats :: Prog Int -> ([([Bool], Rational)], InferStats)
+denProgStats (s `ReturnMult` es) = (renormalize (nonzeroes (M.toList (M.mapKeysWith (+) project d))), stats)
+  where
+    (d, stats) = runDenStmt IS.empty s
+    project sigma = map (`denExpr` sigma) es
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]
 renormalize l = map (second (/tot)) l

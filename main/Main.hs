@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module Main
   ( main
   ) where
@@ -8,7 +9,7 @@ import Options.Applicative
 import Prob.Alloc (allocIntProg)
 import Prob.CoreAST (toIntProg, Prog)
 import Prob.CoreOpt
-import Prob.Den (denProg)
+import Prob.Den (InferStats(..), denProgStats)
 import Prob.Eval (sampled)
 import Prob.SurfaceAST (reportedVars)
 import Prob.Desugar
@@ -22,6 +23,8 @@ newtype Optimize = Optimize Bool
 
 newtype DumpCore = DumpCore Bool
 
+newtype DumpInferStats = DumpInferStats Bool
+
 data Mode = ModeDen | ModeEval Int
 
 modeEval :: Parser Mode
@@ -32,6 +35,9 @@ modeDen = flag ModeDen ModeDen (long "infer" <> help "Perform inference of the p
 
 dumpCore :: Parser DumpCore
 dumpCore = DumpCore <$> switch (long "dump-internal" <> help "Dump the internal representation of the program")
+
+dumpInferStats :: Parser DumpInferStats
+dumpInferStats = DumpInferStats <$> switch (long "dump-infer-stats" <> help "Report what inference cost, to stderr")
 
 optimize :: Parser Optimize
 optimize = option (maybeReader p) (long "optimize" <> help "Whether to optimize the program" <> showDefaultWith s <> value (Optimize True) <> metavar "BOOL")
@@ -51,8 +57,8 @@ newtype Var = Var Int deriving Show
 toVarProg :: Prog Int -> Prog Var
 toVarProg = coerce
 
-run :: (Mode, Optimize, DumpCore, [FilePath]) -> IO ()
-run (m, Optimize opt, DumpCore dc, args) =
+run :: (Mode, Optimize, DumpCore, DumpInferStats, [FilePath]) -> IO ()
+run (m, Optimize opt, DumpCore dc, DumpInferStats dis, args) =
   forM_ args $ \f -> do
     r <- processFile f
     case r of
@@ -71,12 +77,34 @@ run (m, Optimize opt, DumpCore dc, args) =
                       else toIntProg desugared
         when dc $ hPutStrLn stderr (groom (toVarProg intProg))
         results <- case m of
-          ModeDen -> pure (denProg intProg)
+          ModeDen -> do
+            let (rs, stats) = denProgStats intProg
+            -- Forcing the stats runs the whole inference, so this necessarily
+            -- happens before any result is printed.
+            when dis $ hPutStr stderr (formatInferStats f stats)
+            pure rs
           ModeEval t -> sampled t intProg
         putStr (prettyPrintResults results display [])
+
+-- | What the inference cost. 'isStatesPushed' is the one to watch: it is very
+-- nearly proportional to the running time, and unlike the wall clock it is
+-- exact and repeatable, which makes it the right thing to compare when
+-- judging a change to 'Prob.Alloc'.
+formatInferStats :: FilePath -> InferStats -> String
+formatInferStats f !s =
+  unlines $
+  ("Infer stats for " ++ f ++ ":") :
+  [ "  " ++ label ++ replicate (22 - length label) ' ' ++ show n
+  | (label, n) <-
+      [ ("States transformed", isStatesPushed s)
+      , ("Statements run", isStmtsRun s)
+      , ("Largest distribution", isLargestDistr s)
+      , ("Loops solved", isKernelsSolved s)
+      ]
+  ]
 
 main :: IO ()
 main = execParser opts >>= run
   where
     opts = info (allParsers <**> helper) (fullDesc <> progDesc "Perform inference or run a probabilistic program")
-    allParsers = (,,,) <$> (modeDen <|> modeEval) <*> optimize <*> dumpCore <*> progs
+    allParsers = (,,,,) <$> (modeDen <|> modeEval) <*> optimize <*> dumpCore <*> dumpInferStats <*> progs
