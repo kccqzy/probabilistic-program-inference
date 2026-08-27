@@ -1,0 +1,8 @@
+a, b, c: u8[wrap];
+
+do {
+  a ~ uniform 0 5;
+  b ~ uniform 0 5;
+  c ~ uniform 0 5;
+} while (a + b != 10 or a + c != 9 or b + c != 8);
+return a, b, c;

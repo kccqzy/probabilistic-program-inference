@@ -1,9 +1,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | Compares the sparse SCC-ordered 'L.solveRow' against a dense oracle that
+-- | Compares the sparse SCC-ordered 'L.solveRows' against a dense oracle that
 -- asterates the full (untransposed) coefficient matrix with the star-semiring
--- 'Prob.Matrix' module and reads off the target coordinate of every column's
--- solution. The oracle is the specification: @e_target^T (star A) b_k@.
+-- 'Prob.Matrix' module and reads off the target coordinates of every column's
+-- solution. The oracle is the specification: @e_t^T (star A) b_k@ for every
+-- requested target @t@.
 module Main
   ( main
   ) where
@@ -13,18 +14,19 @@ import Data.Array
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import Data.Ratio
+import qualified Data.Set as Set
 import qualified Prob.LinearEq as L
 import Prob.Matrix
 import System.Exit
 import Test.QuickCheck
 
--- | The specification of 'L.solveRow', computed the pre-SCC way: build the full
--- dense system @x = A x + b_k@ over all @n@ variables, asterate @A@ once, and
--- take the @target@ coordinate of each column's solution.
-denseSolveRow ::
-     Int -> L.Coeffs Int -> Int -> [(Int, L.Vec Char)] -> Maybe (L.Vec Char)
-denseSolveRow n rows target bs =
-  fmap (M.filter (/= 0)) (traverse solveCol columns)
+-- | The specification of 'L.solveRows', computed the pre-SCC way: build the
+-- full dense system @x = A x + b_k@ over all @n@ variables, asterate @A@ once,
+-- and take each target's coordinate of each column's solution.
+denseSolveRows ::
+     Int -> L.Coeffs Int -> Set.Set Int -> [(Int, L.Vec Char)] -> Maybe (M.Map Int (L.Vec Char))
+denseSolveRows n rows targets bs =
+  traverse (fmap (M.filter (/= 0)) . traverse solveCol) targetCols
   where
     coeff :: M.Map (Int, Int) Rational
     coeff = M.fromListWith (+) [((i, j), c) | L.Row i tms <- rows, L.Term c j <- tms]
@@ -38,8 +40,10 @@ denseSolveRow n rows target bs =
       starMatrix $
       fmap Real $
       matrixFromFunc n $ \(i, j) -> M.findWithDefault 0 (i, j) coeff
-    solveCol :: M.Map Int Rational -> Maybe Rational
-    solveCol col =
+    targetCols :: M.Map Int (M.Map Char (Int, M.Map Int Rational))
+    targetCols = M.fromList [(t, (,) t <$> columns) | t <- Set.toList targets]
+    solveCol :: (Int, M.Map Int Rational) -> Maybe Rational
+    solveCol (target, col) =
       let bvec = vectorFromFunc n $ \j -> Real (M.findWithDefault 0 j col)
           Vector arr = aStar `mult` bvec
        in extractCompact (arr ! target)
@@ -47,7 +51,7 @@ denseSolveRow n rows target bs =
 -- | A random system in the shape 'Prob.Den' produces: non-negative rows whose
 -- coefficients sum to at most 1 (sometimes exactly 1, so that Inf actually
 -- occurs), plus per-variable exit masses.
-data Sys = Sys Int (L.Coeffs Int) Int [(Int, L.Vec Char)]
+data Sys = Sys Int (L.Coeffs Int) (Set.Set Int) [(Int, L.Vec Char)]
   deriving Show
 
 genRow :: Int -> Int -> Gen (L.Row Int)
@@ -80,16 +84,16 @@ instance Arbitrary Sys where
     n <- chooseInt (1, 6)
     rowVars <- sublistOf [0 .. n - 1]
     rows <- mapM (genRow n) rowVars
-    target <- chooseInt (0, n - 1)
+    targets <- Set.fromList <$> sublistOf [0 .. n - 1]
     exitVars <- sublistOf [0 .. n - 1]
     bs <- forM exitVars $ \st -> (,) st <$> genExit
-    pure (Sys n rows target bs)
+    pure (Sys n rows targets bs)
 
 prop_matchesDense :: Sys -> Property
-prop_matchesDense (Sys n rows target bs) =
-  let dense = denseSolveRow n rows target bs
+prop_matchesDense (Sys n rows targets bs) =
+  let dense = denseSolveRows n rows targets bs
    in classify (isNothing dense) "divergent (Nothing)" $
-      L.solveRow rows target bs === dense
+      L.solveRows rows targets bs === dense
 
 main :: IO ()
 main = do

@@ -5,11 +5,12 @@ module Main
 
 import Control.Monad
 import Data.Coerce
+import qualified Data.IntMap as IM
 import Options.Applicative
 import Prob.Alloc (allocIntProg)
 import Prob.CoreAST (toIntProg, Prog)
 import Prob.CoreOpt
-import Prob.Den (InferStats(..), denProgStats)
+import Prob.Den (InferStats(..), InferLoopStats(..), denProgStats)
 import Prob.Eval (sampled)
 import Prob.SurfaceAST (reportedVars)
 import Prob.Desugar
@@ -93,15 +94,26 @@ run (m, Optimize opt, DumpCore dc, DumpInferStats dis, args) =
 formatInferStats :: FilePath -> InferStats -> String
 formatInferStats f !s =
   unlines $
-  ("Infer stats for " ++ f ++ ":") :
-  [ "  " ++ label ++ replicate (22 - length label) ' ' ++ show n
-  | (label, n) <-
-      [ ("States transformed", isStatesPushed s)
-      , ("Statements run", isStmtsRun s)
-      , ("Largest distribution", isLargestDistr s)
-      , ("Loops solved", isKernelsSolved s)
-      ]
-  ]
+    ("Infer stats for " ++ f ++ ":")
+      : [ "  " ++ label ++ replicate (22 - length label) ' ' ++ show n
+        | (label, n) <-
+            [ ("States transformed", isStatesPushed s),
+              ("Statements run", isStmtsRun s),
+              ("Largest distribution", isLargestDistr s)
+            ]
+        ]
+      ++ concatMap
+        ( \(ln, ils) ->
+            ["  Loop " ++ show ln ++ ":"]
+              ++ [ "  " ++ label ++ replicate (22 - length label) ' ' ++ show n
+                 | (label, n) <-
+                     [ ("    Footprint size", ilsFootprintSize ils),
+                       ("    Carried set size", ilsCarriedSize ils),
+                       ("    Distinct kernels", ilsKernels ils)
+                     ]
+                 ]
+        )
+        (IM.toList (isLoopStats s))
 
 main :: IO ()
 main = execParser opts >>= run

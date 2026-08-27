@@ -1,0 +1,8 @@
+a, b, c: u8[wrap];
+
+do {
+  a ~ uniform 0 5;
+  b ~ uniform 0 5;
+  c ~ uniform 0 5;
+} while (a + b != 10 or a + c != 9);
+// By the time the loop terminates, a + b == 10 and a + c == 9. Therefore a==5, b==5, c==4.

@@ -10,10 +10,9 @@
 -- The numbering is register allocation, done by Chaitin's algorithm: variables
 -- are split into webs, webs that are never live at the same time are allowed to
 -- collide, and the resulting interference graph is colored greedily. Slicing
--- also plants @:= False@ resets around loops so a dead web cannot carry
--- differing junk into the loop head. Slicing and interference are two clients
--- of the same backward liveness analysis, so one walk serves both, and the
--- interference graph is built for the sliced program.
+-- and interference are two clients of the same backward liveness analysis, so
+-- one walk serves both, and the interference graph is built for the sliced
+-- program.
 --
 -- A word on what all of this is for, because it is easy to optimise the wrong
 -- thing. What we are trying to make small is the work 'Prob.Den' does, which is
@@ -404,19 +403,13 @@ sliceStmt (While o e body) = do
         if prev == next then pure r else go
   modify' (\(_, g) -> (live0, g))
   slicedBody <- go
-  -- A web written in the loop but not live causes a large increase in program
-  -- states, so it is reset to False at the end of the body and before the
-  -- loop for the states entering the first iteration.
-  liveEntry <- gets fst
-  let loopVars = Set.unions (Set.fromList (toList e) : map (Set.fromList . toList) slicedBody)
-      resetWebs = loopVars `Set.difference` liveEntry
-      resetStmts = [w := Constant False | w <- Set.toList resetWebs]
-  -- The reset is an extra definition of the dead web itself: after coloring it
-  -- overwrites exactly the number the junk sits in. 'def' gives it edges to
-  -- everything live around the loop so the reset cannot clobber a number whose
-  -- value is still wanted.
-  for_ resetWebs def
-  pure (resetStmts ++ [While o e (slicedBody ++ resetStmts)])
+  -- Historically, we used to reset what's written in the loop but dead at its
+  -- head here, at the end of the body and again before the loop, so that states
+  -- differing only in these dead states would be recognized as the same state
+  -- at the loop head. 'Prob.Den' now performs the carried analysis: it projects
+  -- each arriving state onto the loop's carried set, which excludes precisely
+  -- those the body overwrites before reading.
+  pure [While o e slicedBody]
 
 --------------------------------------------------------------------------------
 -- Coloring
