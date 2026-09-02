@@ -89,26 +89,38 @@ substituteStmt (If expr s1 s2) = do
           falseState = assuming expr' False orig
           (s1', out1) = runState (substituteStmts s1) trueState
           (s2', out2) = runState (substituteStmts s2) falseState
-          newState = MM.merge MM.dropMissing MM.dropMissing (MM.zipWithMaybeMatched (\_ b1 b2 -> if b1 == b2 then Just b1 else Nothing)) out1 out2
-      put newState
+      put (intersectKnown out1 out2)
       pure [If expr' s1' s2']
 substituteStmt (While o expr s) = do
   firstIterExpr <- substituteExpr expr
   case firstIterExpr of
     Constant False -> pure []
     _ -> do
-      modify' (forgetWrites (variablesWritten s))
+      incoming <- get
+      put (loopHeadFacts incoming)
       expr' <- substituteExpr expr
-      beforeStmt <- get
+      atHead <- get
       -- The body may assume the guard held on entry.
       modify' (assuming expr' True)
       s' <- substituteStmts s
-      -- Now we have constants established within the loop, but we cannot use it
-      -- in case the loop runs zero times.
-      put beforeStmt
+      -- The facts the body went on to establish hold only inside it; the loop
+      -- may have run zero times.
+      put atHead
       -- After the loop the guard came out false.
       modify' (assuming expr' False)
       pure [While o expr' s']
+  where
+    -- What may be assumed at the loop head. There are two edges before the
+    -- loop, and after an iteration. So only the facts that survive both belong
+    -- here. Start by hoping every fact on entry survives and drop whatever the
+    -- body contradicts; the facts can only ever be dropped, so this settles, in
+    -- at most as many passes as there are facts.
+    loopHeadFacts entry
+      | entry' == entry = entry
+      | otherwise = loopHeadFacts entry'
+      where
+        entry' = intersectKnown entry afterBody
+        afterBody = execState (substituteExpr expr >>= \g -> modify' (assuming g True) >> substituteStmts s) entry
 
 -- | The variable assignments that must hold whenever the expression evaluates
 -- to the given value: a conjunction being true pins every conjunct, a
@@ -122,12 +134,9 @@ assuming (a `And` b) True = assuming a True . assuming b True
 assuming (a `Or` b) False = assuming a False . assuming b False
 assuming _ _ = id
 
--- | Find variables that are assigned to in statements.
-variablesWritten :: Ord vt => [Stmt vt] -> Set.Set vt
-variablesWritten = foldMap go
-  where
-    go (v := _) = Set.singleton v
-    go (v :~ _) = Set.singleton v
-    go (If _ s1 s2) = variablesWritten s1 <> variablesWritten s2
-    go (While _ _ s) = variablesWritten s
-    go (Observe _) = Set.empty
+-- | The facts that survive a join of two paths: those the two agree on. (We
+-- don't call it join because it could be confused with join and meet in
+-- lattices.)
+intersectKnown :: Ord vt => Known vt -> Known vt -> Known vt
+intersectKnown = MM.merge MM.dropMissing MM.dropMissing (MM.zipWithMaybeMatched keepIfEqual)
+  where keepIfEqual _ a b = if a == b then Just a else Nothing
