@@ -40,16 +40,41 @@ import qualified Data.Map.Strict as M
 import Data.Maybe
 import Data.Ord (Down (..), comparing)
 import Data.Semigroup (Semigroup (..), stimesIdempotentMonoid)
+import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 import Prob.CoreAST
 
 -- | Slice a program and number its variables, letting variables share a
 -- number when their values are never wanted at the same time.
 allocIntProg :: (Ord vt) => Prog vt -> Prog Int
-allocIntProg p = (colors M.!) <$> sliced
+allocIntProg p = relabelLoops ((colors M.!) <$> sliced)
   where
     (sliced, g) = sliceInterfere (scheduleProg (webProg p))
     colors = color g
+
+-- | Give the loops labels that are equal iff when the loops are identical.
+-- "Prob.Den" caches solved loop kernels by label, and a kernel is a property of
+-- the guard and body alone, so identical loops (the two copies a do-while
+-- desugars into, typically) may share one and different loops must not. The
+-- parser's labels only say which loops were identical before desugaring; after
+-- optimization (especially constant propagation and copy propagation) and color
+-- allocation, identical source-level loops need not remain identical.
+relabelLoops :: Prog Int -> Prog Int
+relabelLoops (ss `ReturnMult` es) = evalState (traverse go ss) Seq.empty `ReturnMult` es
+  where
+    go :: Stmt Int -> State (Seq.Seq (Expr Int, [Stmt Int])) (Stmt Int)
+    go (If e s1 s2) = If e <$> traverse go s1 <*> traverse go s2
+    go (While _ e body) = do
+      -- Inner loops first, so the key of the outer loop contains their new
+      -- labels.
+      body' <- traverse go body
+      let content = (e, body')
+      known <- gets (content `Seq.elemIndexL`)
+      l <- case known of
+        Just l -> pure l
+        Nothing -> state (\m -> (Seq.length m, m Seq.|> content))
+      pure (While l e body')
+    go s = pure s
 
 --------------------------------------------------------------------------------
 -- Webs
