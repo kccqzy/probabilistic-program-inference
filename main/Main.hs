@@ -6,9 +6,10 @@ module Main
 import Control.Monad
 import Data.Coerce
 import qualified Data.IntMap as IM
+import Data.List (intercalate)
 import Options.Applicative
 import Prob.CoreAST (Prog)
-import Prob.Den (InferStats(..), InferLoopStats(..), denProgStats)
+import Prob.Den (InferStats(..), InferLoopStats(..), InferParStats(..), denProgStats)
 import Prob.Eval (sampled)
 import Prob.Parse
 import Prob.Pipeline (compileProgram, programDisplay)
@@ -75,33 +76,47 @@ run (m, Optimize opt, DumpCore dc, DumpInferStats dis, args) =
           ModeEval t -> sampled t intProg
         putStr (prettyPrintResults results display [])
 
--- | What the inference cost. 'isStatesPushed' is the one to watch: it is very
--- nearly proportional to the running time, and unlike the wall clock it is
--- exact and repeatable, which makes it the right thing to compare when
--- judging a change to 'Prob.Alloc'.
+-- | What the inference cost. Two numbers are worth watching, and they have to
+-- be watched together: 'isStatesPushed' is very nearly proportional to the time
+-- spent running statements. Besides running statements, the other two major
+-- cost centers are (1) solving of loops; (2) combination of the blocks of a Par
+-- node. These are reported in a nested manner.
+--
+-- Every 'Par' node is reported under the loop whose body it splits.
 formatInferStats :: FilePath -> InferStats -> String
 formatInferStats f !s =
-  unlines $
-    ("Infer stats for " ++ f ++ ":")
-      : [ "  " ++ label ++ replicate (22 - length label) ' ' ++ show n
-        | (label, n) <-
-            [ ("States transformed", isStatesPushed s),
-              ("Statements run", isStmtsRun s),
-              ("Largest distribution", isLargestDistr s)
-            ]
-        ]
-      ++ concatMap
-        ( \(ln, ils) ->
-            ["  Loop " ++ show ln ++ ":"]
-              ++ [ "  " ++ label ++ replicate (22 - length label) ' ' ++ show n
-                 | (label, n) <-
-                     [ ("    Footprint size", ilsFootprintSize ils),
-                       ("    Carried set size", ilsCarriedSize ils),
-                       ("    Distinct kernels", ilsKernels ils)
-                     ]
-                 ]
-        )
-        (IM.toList (isLoopStats s))
+  unlines (("Infer stats for " ++ f ++ ":") : map render rows)
+  where
+    render (d, label, val)
+      | null val = indent d ++ label ++ ":"
+      | otherwise = let l = indent d ++ label in l ++ replicate (width - length l) ' ' ++ "  " ++ val
+    indent d = replicate (2 + 2 * d) ' '
+    width = maximum (0 : [length (indent d ++ l) | (d, l, v) <- rows, not (null v)])
+    rows =
+      [ (0, "States transformed", show (isStatesPushed s)),
+        (0, "Statements run", show (isStmtsRun s)),
+        (0, "Largest distribution", show (isLargestDistr s)),
+        (0, "Par nodes", show (sum (map (IM.size . ilsPars) (IM.elems (isLoopStats s)))))
+      ]
+        ++ concatMap loopRows (IM.toList (isLoopStats s))
+    loopRows (ln, ils) =
+      (0, "Loop " ++ show ln, "")
+        :  (1, "Footprint size", show (ilsFootprintSize ils))
+        :  (1, "Carried set size", show (ilsCarriedSize ils))
+        :  [(1, "Distinct kernels", show (ilsKernels ils)) | ilsKernels ils > 0]
+        ++ [(1, "Deterministic iterations", show (ilsDeterministicSteps ils)) | ilsDeterministicSteps ils > 0]
+        ++ concatMap parRows (IM.toList (ilsPars ils))
+    parRows (pn, ips) =
+      (1, "Par " ++ show pn, "")
+        : [ (2, "Blocks", show (ipsBlocks ips)),
+            (2, "Node runs", show (ipsRuns ips)),
+            (2, "States in", show (ipsStatesIn ips)),
+            (2, "States out", show (ipsStatesOut ips)),
+            (2, "Block footprints", commas (ipsFootprints ips)),
+            (2, "Block states solved", commas (ipsSolved ips)),
+            (2, "Block fan-out", commas (ipsFanOut ips))
+          ]
+    commas = intercalate ", " . map show
 
 main :: IO ()
 main = execParser opts >>= run

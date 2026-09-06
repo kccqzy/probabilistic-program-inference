@@ -8,6 +8,7 @@ module Prob.Den
   , denProgStats
   , InferStats(..)
   , InferLoopStats(..)
+  , InferParStats(..)
   ) where
 
 import Control.Monad
@@ -21,6 +22,7 @@ import Data.Maybe
 import qualified Data.Set as Set
 import Prob.CoreAST
 import qualified Prob.LinearEq as L
+import Prob.Liveness (liveIn, liveIns)
 
 --------------------------------------------------------------------------------
 -- Denotational Semantics
@@ -39,13 +41,13 @@ denExpr (And a b) sigma = denExpr a sigma && denExpr b sigma
 denExpr (Xor a b) sigma = denExpr a sigma /= denExpr b sigma
 denExpr (Not a) sigma = not (denExpr a sigma)
 
--- | The loop currently being unrolled, identified by its label: the source
--- offset of the loop's @while@ keyword, assigned by the parser. Distinct
--- source loops therefore always have distinct labels, while the body copies a
--- do-while desugars into share the label of their single @while@ keyword —
--- which is sound, and desirable for kernel-cache sharing because
--- label-equal 'While' nodes are structurally identical and the loop kernel is
--- solved independently of what follows the loop.
+-- | The loop currently being unrolled, identified by its label. Labels are
+-- equal exactly when the 'While' nodes are structurally identical: that is
+-- how "Prob.Alloc" assigns them, and on an unoptimized program the parser's
+-- labels (the source offset of the @while@ keyword) have the property too,
+-- since the only copies are the two a do-while desugars into. Sharing kernels
+-- between identical loops is sound because the kernel is solved
+-- independently of what follows the loop.
 --
 -- The states here specifically the seen set is not full loop-head states but
 -- their /carried/ parts: states that satisfy the guard that can additionally be
@@ -91,6 +93,8 @@ flowStmt (If e s1 s2) =
 -- body writes in an earlier iteration is not relevant here.
 flowStmt (While _ e body) =
   Flow (IS.fromList (toList e) `IS.union` flowMayReadBeforeWrite (foldMap flowStmt body)) IS.empty
+-- The blocks commute, so their sequential flow is fine.
+flowStmt (Par _ blocks) = foldMap (foldMap flowStmt) blocks
 
 -- | Find the carried set of a loop. The carried set is defined as the subset of
 -- the footprint of the loop such that any variables that are always written
@@ -99,13 +103,30 @@ findCarried :: IS.IntSet -> [Stmt Int] -> IS.IntSet
 findCarried footprint stmts = footprint IS.\\ (mustWrite IS.\\ mayRead)
   where Flow mayRead mustWrite = foldMap flowStmt stmts
 
+-- | Find the counter of a loop. The counter is defined as the set of carried
+-- variables written by the sample-free blocks of the body's 'Par'. Intuitively,
+-- this is a generalization of the typical counter used in a three-statement
+-- C-style loop @for (i = 0; i < 5; ++i)@ where the loop body does not write to
+-- @i@ at all. Here, the counter is the part of the loop that does not interact
+-- with other stochastic variables. This actually allows more sophisticated
+-- counters as long as they are fully deterministic.
+findCounter :: IS.IntSet -> [Stmt Int] -> IS.IntSet
+findCounter carried stmts = IS.intersection carried (IS.fromList (concatMap (concatMap stmtWrites) (filter (not . any stmtSamples) blocks)))
+  where
+    blocks =
+      case stmts of
+        Par _ bs : remainder ->
+          -- Anything after the 'Par' is the join, which must not write anything carried.
+          if all (IS.disjoint carried . IS.fromList . stmtWrites) remainder
+          then bs
+          else error "internal error: post-Par block join must not write carried"
+        _ -> [stmts]
+          -- A block that is not split counts as one block. The entire block may qualify as a counter.
+
 -- | What inference actually cost, as opposed to what a static estimate of it
 -- predicted. 'denStmts' pushes a whole distribution through one statement at a
--- time, so the time it takes is very nearly proportional to 'isStatesPushed':
--- the number of (statement, state) pairs it worked on.
---
--- When doing optimization work, the stats here are probably more useful than
--- say, the number of variables.
+-- time, so the time it takes is largely proportional to 'isStatesPushed': the
+-- number of (statement, state) pairs it worked on.
 data InferStats = InferStats
   { -- | Statements handled, counting each one once per time it is run:
     -- a loop unrolled many times is counted many times.
@@ -120,7 +141,33 @@ data InferStats = InferStats
   }
 
 data InferLoopStats = InferLoopStats
-  { ilsFootprintSize, ilsCarriedSize, ilsKernels :: Int }
+  { ilsFootprintSize, ilsCarriedSize, ilsKernels, ilsDeterministicSteps :: Int
+    -- | The 'Par' nodes in this loop's body, by label. A node nested in an
+    -- inner loop belongs to that inner loop, not to this one.
+  , ilsPars :: IM.IntMap InferParStats
+  }
+
+-- | What one 'Par' node cost. The three per-block lists are in block order and
+-- all have 'ipsBlocks' entries.
+data InferParStats = InferParStats
+  { -- | How many blocks the loop body was split into.
+    ipsBlocks :: Int
+    -- | How many times the node ran. One per iteration it took part in.
+  , ipsRuns :: Int
+    -- | States arriving at the node, summed over its runs, and states leaving
+    -- it. The ratio is how much the node fans the distribution out.
+  , ipsStatesIn, ipsStatesOut :: Int
+    -- | Per block: how many variables it mentions.
+  , ipsFootprints :: [Int]
+    -- | Per block: how many distinct projections of the state it was solved
+    -- for. This is the block's cache size, and the analogue of
+    -- 'ilsKernels' — the whole point of the split is that these stay small
+    -- where their product would not.
+  , ipsSolved :: [Int]
+    -- | Per block: the most states any one of those solves produced. The
+    -- product of these bounds how far one arriving state can fan out.
+  , ipsFanOut :: [Int]
+  }
 
 data LoopInfo = LoopInfo
   { liFootprint :: IS.IntSet
@@ -131,7 +178,16 @@ data LoopInfo = LoopInfo
     -- the carried set. It is allowed for a loop guard to read some variables
     -- that are not read again in the loop itself. Such variables may safely be
     -- disregarded.
+  , liCounter :: IS.IntSet
+    -- ^ The carried variables the body updates deterministically and on their
+    -- own: those written by the sample-free blocks of the body's 'Par' (or
+    -- by the whole body, if it is sample-free). Their next value is a
+    -- function of their current value, so every state alive after @t@
+    -- iterations has the counter value @f^t@ of where it started, and a state
+    -- can only recur once a counter value has. Empty when there is no such
+    -- part.
   , liKernels :: M.Map Sigma (Distr Sigma)
+  , liDeterministicSteps :: Int
   }
 
 -- | The state threaded through the denotation: the loop currently being
@@ -143,9 +199,27 @@ data LoopInfo = LoopInfo
 data DenState = DenState
   { dsCurrentLoop :: Maybe CurrentLoop
   , dsLoopInfo :: IM.IntMap LoopInfo
+  , dsParInfo :: IM.IntMap ParInfo
+  , dsParLive :: IM.IntMap IS.IntSet
+    -- ^ The variables live after each 'Par' node, from 'parLiveOuts'.
   , dsStmtsRun :: Int
   , dsStatesPushed :: Int
   , dsLargestDistr :: Int
+  }
+
+-- | What is known about a 'Par' node, by its label: for each block, the
+-- variables it mentions, the variables it writes, and those of its writes
+-- that are still live after the node; and the block's cache of transitions. A
+-- cache entry maps a state projected onto the block's footprint to what the
+-- block does to it, restricted to those live written variables; the variables
+-- it only reads are supplied by the caller. The writes that are not live are
+-- wanted too: they leave the state at the node even though they are no part
+-- of the block's answer.
+data ParInfo = ParInfo
+  { piBlocks :: [(IS.IntSet, IS.IntSet, IS.IntSet)]
+  , piCaches :: IM.IntMap (M.Map Sigma (Distr Sigma))
+    -- | Cost counters, for 'InferParStats'.
+  , piRuns, piStatesIn, piStatesOut :: Int
   }
 
 type Den = State DenState
@@ -228,16 +302,30 @@ denStmt loop@(While lbl e s) next d = do
       -- the guard never run the body and exit; for the rest, we compute the
       -- carried part and the non-carried part. The carried part is the kernel's
       -- cache key so states differing anywhere else share one kernel.
-      (fp, car) <- ((,) <$> liFootprint <*> liCarried) <$> loopInfo
+      --
+      -- Before any kernel is solved, the whole arriving distribution is run
+      -- deterministically; the counter tells us the variables that are written
+      -- deterministically. If it exists, we run the body iteration by iteration
+      -- for as long as the counter variables do not recur and the counter does
+      -- not cause the loop to exit. This guarantees that no loop-head state can
+      -- have been seen before. Within that horizon the loop is just
+      -- straight-line code, and pushing the distribution through it costs one
+      -- body pass per iteration rather than one per loop-head state, with no
+      -- equations to solve. What is still alive when a counter value recurs
+      -- goes through the kernels.
+      (fp, car, counter) <- ((,,) <$> liFootprint <*> liCarried <*> liCounter) <$> loopInfo
       let (dTrue, dFalse) = M.partitionWithKey (\sigma _ -> denExpr e sigma) d
-          dTrueStates = M.keysSet dTrue
-          dTrueRelevantStates = Set.map (IS.intersection car) dTrueStates
-      ensureKernels dTrueRelevantStates
+          -- What a state carries into the next iteration: the carried part,
+          -- and whatever the loop does not touch at all.
+          lump sigma = IS.intersection car sigma `IS.union` (sigma IS.\\ fp)
+      (deterministicExits, alive) <- deterministicTransition counter lump (mergeDistr lump dTrue)
+      let entries = Set.map (IS.intersection car) (M.keysSet alive)
+      ensureKernels entries
       kernels <- gets (liKernels . (IM.! lbl) . dsLoopInfo)
       let transform (sigma, w) =
             let kernel = kernels M.! IS.intersection car sigma
             in mergeDistr (IS.union (sigma IS.\\ fp)) ((*w) <$> kernel)
-          out = M.unionsWith (+) (dFalse : map transform (M.toList dTrue))
+          out = M.unionsWith (+) (dFalse : deterministicExits : map transform (M.toList alive))
       denStmts next out
   where
     loopInfo = do
@@ -246,9 +334,31 @@ denStmt loop@(While lbl e s) next d = do
         Just li -> pure li
         Nothing -> do
           let fp = IS.fromList (toList e ++ concatMap toList s)
-              li = LoopInfo { liFootprint = fp, liCarried = findCarried fp s, liKernels = M.empty }
+              car = findCarried fp s
+              li = LoopInfo { liFootprint = fp, liCarried = car, liCounter = findCounter car s, liKernels = M.empty, liDeterministicSteps = 0 }
           modify' (\ds -> ds {dsLoopInfo = IM.insert lbl li (dsLoopInfo ds)})
           pure li
+    -- Push the alive distribution through iterations of the body until a
+    -- counter value recurs, or nothing is alive. Returns the mass that exited
+    -- and the distribution still alive. Alive means the state satisfies
+    -- the guard. A loop without a counter is not handled at all; nothing exits.
+    deterministicTransition counter lump alive0
+      | IS.null counter = pure (M.empty, alive0)
+      | otherwise = go Set.empty M.empty alive0
+      where
+        go seen exits alive
+          | M.null alive = pure (exits, alive)
+          | counterState `Set.isSubsetOf` seen = pure (exits, alive)
+          | otherwise = do
+              modify' (\ds -> ds {dsLoopInfo = IM.adjust (\li -> li {liDeterministicSteps = liDeterministicSteps li + 1}) lbl (dsLoopInfo ds)})
+              r <- denStmts s alive
+              let after = case r of
+                    Ret dist [] -> dist
+                    _ -> error "internal error: loop terms escaped"
+                  (aTrue, aFalse) = M.partitionWithKey (\sigma _ -> denExpr e sigma) after
+              go (seen `Set.union` counterState) (M.unionWith (+) exits aFalse) (mergeDistr lump aTrue)
+          where
+            counterState = Set.map (IS.intersection counter) (M.keysSet alive)
     -- Solve, in one batch, the kernels of every lumped entry state not
     -- already cached. The missing lumps are all unrolled under a single
     -- 'CurrentLoop', so a lump reachable from two entry states is
@@ -292,21 +402,135 @@ denStmt loop@(While lbl e s) next d = do
             Nothing -> denStmts (s ++ [loop]) (M.singleton loopSigma 1)
         modify' (overCurrentLoop (\c -> c {clEqns = (loopSigma, r) : clEqns c}))
     overCurrentLoop f ds = ds {dsCurrentLoop = f <$> dsCurrentLoop ds}
+denStmt (Par lbl blocks) next d = do
+  info <- parInfo
+  -- Each state goes through every block, and the block's answer is looked up
+  -- by the part of the state the block can see, so a block is pushed once
+  -- per distinct such part, however many states share it. What no block
+  -- writes is carried over from the state unchanged. A written variable that
+  -- is dead after the node is dropped, so that states differing only in a
+  -- spent temporary merge here rather than at the next loop head.
+  -- The blocks commute and no block mentions what another writes, so a state's
+  -- projection onto one block's footprint is the same whether or not the other
+  -- blocks have run. We may therefore push the whole distribution through one
+  -- block at a time instead of building each state's product on its own and
+  -- unioning the per-state results at the end. The product is the same, but
+  -- the intermediate distributions are merged as they are built, so states
+  -- that agree from here on collapse at once instead of being carried to a
+  -- final union of as many maps as there were states.
+  out <- foldM applyBlock d (zip3 [0 ..] blocks (piBlocks info))
+  overParInfo (\pinfo -> pinfo {piRuns = piRuns pinfo + 1, piStatesIn = piStatesIn pinfo + M.size d, piStatesOut = piStatesOut pinfo + M.size out})
+  denStmts next out
+  where
+    overParInfo f = modify' (\ds -> ds {dsParInfo = IM.adjust f lbl (dsParInfo ds)})
+    parInfo = do
+      cached <- gets (IM.lookup lbl . dsParInfo)
+      case cached of
+        Just pinfo -> pure pinfo
+        Nothing -> do
+          live <- gets (IM.lookup lbl . dsParLive)
+          let keep = maybe id IS.intersection live
+              pinfo = ParInfo [(IS.fromList (concatMap toList b), ws, keep ws) | b <- blocks, let ws = IS.fromList (concatMap stmtWrites b)] IM.empty 0 0 0
+          modify' (\ds -> ds {dsParInfo = IM.insert lbl pinfo (dsParInfo ds)})
+          pure pinfo
+    applyBlock dist (i, block, (fp, writes, written)) =
+      foldM
+          ( \acc (sigma, w) -> do
+              t <- blockTransition i block (IS.intersection fp sigma) written
+              let rest = sigma IS.\\ writes
+              pure $ M.unionWith (+) acc (mergeDistr (IS.union rest) ((*w) <$> t))
+          )
+          M.empty
+          (M.toList dist)
+    blockTransition i block key written = do
+      cached <- gets (M.lookup key . IM.findWithDefault M.empty i . piCaches . (IM.! lbl) . dsParInfo)
+      case cached of
+        Just t -> pure t
+        Nothing -> do
+          r <- denStmts block (M.singleton key 1)
+          let t = case r of
+                Ret dist [] -> mergeDistr (IS.intersection written) dist
+                -- A block cannot contain the loop being unrolled, or indeed any loop at all.
+                _ -> error "internal error: loop terms escaped from a Par block"
+              remember pinfo = pinfo {piCaches = IM.insertWith M.union i (M.singleton key t) (piCaches pinfo)}
+          modify' (\ds -> ds {dsParInfo = IM.adjust remember lbl (dsParInfo ds)})
+          pure t
 
-runDenStmt :: Sigma -> [Stmt Int] -> (Distr Sigma, InferStats)
-runDenStmt sigma stmts = (extractDist r, stats)
+-- | Which loop each 'Par' node sits in, by label: the innermost 'While' whose
+-- body contains it. "Prob.Alloc" only ever builds a 'Par' out of a loop body,
+-- so every node has one; a node outside every loop would simply not be
+-- reported.
+parLoops :: Prog Int -> IM.IntMap Int
+parLoops (ReturnMult ss _) = execState (goStmts Nothing ss) IM.empty
+  where
+    goStmts loop = traverse_ (goStmt loop)
+    goStmt loop s =
+      case s of
+        If _ s1 s2 -> goStmts loop s1 >> goStmts loop s2
+        While o _ body -> goStmts (Just o) body
+        Par o bs -> do
+          for_ loop (modify' . IM.insert o)
+          goStmts loop (concat bs)
+        _ -> pure ()
+
+-- | The variables live after each 'Par' node of a program, by label. What a
+-- block writes that is dead afterwards need not be part of the states
+-- "Prob.Den" builds from the blocks' results.
+parLiveOuts :: Prog Int -> IM.IntMap IS.IntSet
+parLiveOuts (ReturnMult ss es) = execState (goStmts (Set.fromList (foldMap toList es)) ss) IM.empty
+  where
+    goStmts out stmts = zipWithM_ goStmt (drop 1 (scanr liveIn out stmts)) stmts
+    goStmt out s =
+      case s of
+        If _ s1 s2 -> goStmts out s1 >> goStmts out s2
+        While _ _ body -> goStmts (liveIn s out) body
+        Par o blocks -> do
+          modify' (IM.insert o (IS.fromList (Set.toList out)))
+          zipWithM_ goStmts (drop 1 (scanr liveIns out blocks)) blocks
+        _ -> pure ()
+
+runDenStmt :: Sigma -> Prog Int -> (Distr Sigma, InferStats)
+runDenStmt sigma prog@(stmts `ReturnMult` _) = (extractDist r, stats)
   where
     (r, ds) =
       runState
         (denStmts stmts (M.singleton sigma 1))
-        (DenState Nothing IM.empty 0 0 0)
+        (DenState Nothing IM.empty IM.empty (parLiveOuts prog) 0 0 0)
     stats =
       InferStats
         { isStmtsRun = dsStmtsRun ds
         , isStatesPushed = dsStatesPushed ds
         , isLargestDistr = dsLargestDistr ds
-        , isLoopStats = IM.map (\(LoopInfo f c k) -> InferLoopStats (IS.size f) (IS.size c) (M.size k)) (dsLoopInfo ds)
+        , isLoopStats =
+            IM.mapWithKey
+              (\lbl li ->
+                 InferLoopStats
+                   (IS.size (liFootprint li))
+                   (IS.size (liCarried li))
+                   (M.size (liKernels li))
+                   (liDeterministicSteps li)
+                   (IM.mapMaybeWithKey (parStatsOf lbl) (dsParInfo ds)))
+              (dsLoopInfo ds)
         }
+    -- A 'Par' node reports under the loop whose body holds it. A node that
+    -- never ran has no 'ParInfo' and so is silently absent, which is the
+    -- right answer: there is nothing to say about what it cost.
+    inLoop = parLoops prog
+    parStatsOf lbl par pinfo
+      | IM.lookup par inLoop == Just lbl = Just (parStats pinfo)
+      | otherwise = Nothing
+    parStats pinfo =
+      InferParStats
+        { ipsBlocks = length (piBlocks pinfo)
+        , ipsRuns = piRuns pinfo
+        , ipsStatesIn = piStatesIn pinfo
+        , ipsStatesOut = piStatesOut pinfo
+        , ipsFootprints = [IS.size fp | (fp, _, _) <- piBlocks pinfo]
+        , ipsSolved = [M.size (cacheOf i) | i <- [0 .. length (piBlocks pinfo) - 1]]
+        , ipsFanOut = [maximum (0 : map M.size (M.elems (cacheOf i))) | i <- [0 .. length (piBlocks pinfo) - 1]]
+        }
+      where
+        cacheOf i = IM.findWithDefault M.empty i (piCaches pinfo)
 
 extractDist :: Ret -> Distr Sigma
 extractDist (Ret d []) = d
@@ -321,9 +545,9 @@ denProg = fst . denProgStats
 -- forces the whole inference, so a caller that wants both should print the
 -- results first if it wants them to stream.
 denProgStats :: Prog Int -> ([([Bool], Rational)], InferStats)
-denProgStats (s `ReturnMult` es) = (renormalize (nonzeroes (M.toList (M.mapKeysWith (+) project d))), stats)
+denProgStats prog@(_ `ReturnMult` es) = (renormalize (nonzeroes (M.toList (M.mapKeysWith (+) project d))), stats)
   where
-    (d, stats) = runDenStmt IS.empty s
+    (d, stats) = runDenStmt IS.empty prog
     project sigma = map (`denExpr` sigma) es
 
 renormalize :: Fractional c => [(a, c)] -> [(a, c)]

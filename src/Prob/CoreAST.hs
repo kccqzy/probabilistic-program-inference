@@ -8,6 +8,9 @@ module Prob.CoreAST
   , Prog(..)
   , Sigma
   , sigmaInsert
+  , stmtWrites
+  , stmtReads
+  , stmtSamples
   , toIntProg
   , mkNot
   , mkAnd
@@ -55,7 +58,44 @@ data Stmt varTy
   | While Int -- The Int here is a loop label.
           (Expr varTy)
           [Stmt varTy]
+  | Par Int -- A label, unique among the Par nodes of a program.
+        [[Stmt varTy]]
+    -- ^ Parallel composition: blocks that touch disjoint state. Invariant: a
+    -- variable written by one block occurs nowhere in any other block; blocks
+    -- may share reads of variables none of them writes. The blocks therefore
+    -- commute, and running them in any order (including interleaved) is fine.
+    -- It is called Par because it is analogous to parallel programming where
+    -- different threads of execution may run these blocks in arbitrary
+    -- interleaved order safely without synchronization. We exploit this in
+    -- Prob.Den even if we do not actually use threads.
   deriving (Show, Eq, Functor, Foldable, Traversable)
+
+-- | The variables a statement may write, anywhere inside it.
+stmtWrites :: Stmt varTy -> [varTy]
+stmtWrites (x := _) = [x]
+stmtWrites (x :~ _) = [x]
+stmtWrites (Observe _) = []
+stmtWrites (If _ s1 s2) = concatMap stmtWrites s1 ++ concatMap stmtWrites s2
+stmtWrites (While _ _ s) = concatMap stmtWrites s
+stmtWrites (Par _ bs) = concatMap (concatMap stmtWrites) bs
+
+-- | The variables a statement may read, anywhere inside it.
+stmtReads :: Stmt varTy -> [varTy]
+stmtReads (_ := e) = toList e
+stmtReads (_ :~ _) = []
+stmtReads (Observe e) = toList e
+stmtReads (If e s1 s2) = toList e ++ concatMap stmtReads s1 ++ concatMap stmtReads s2
+stmtReads (While _ e s) = toList e ++ concatMap stmtReads s
+stmtReads (Par _ bs) = concatMap (concatMap stmtReads) bs
+
+-- | Whether a statement performs sampling.
+stmtSamples :: Stmt varTy -> Bool
+stmtSamples (_ :~ _) = True
+stmtSamples (_ := _) = False
+stmtSamples (Observe _) = False
+stmtSamples (If _ s1 s2) = any stmtSamples s1 || any stmtSamples s2
+stmtSamples (While _ _ s) = any stmtSamples s
+stmtSamples (Par _ bs) = any (any stmtSamples) bs
 
 -- | A program: the statements to run, and the booleans to return.
 data Prog varTy =

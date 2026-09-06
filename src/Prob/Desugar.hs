@@ -18,6 +18,7 @@ import Data.Foldable
 import Data.List (foldl1')
 import Data.Ratio
 import qualified Data.Sequence as Seq
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Word
 import Prob.CoreAST
@@ -45,12 +46,10 @@ emit ss = modify (\s -> s {emOut = emOut s Seq.>< ss})
 
 -- | Bind an expression to a temporary and hand back a reference to it, so that
 -- reading it many times costs one variable rather than one copy of the tree
--- each time. This is exempt if the original expression is a constant or a
--- variable.
+-- each time. This is exempt if the original expression mentions zero variables
+-- or one (Constant, Var _, Not (Var _) etc).
 share :: Expr Var -> D (Expr Var)
-share e@(Constant _) = pure e
-share e@(Var _) = pure e
-share e = do
+share e = if Set.size (Set.fromList (toList e)) <= 1 then pure e else do
   t <- freshTmp
   emit [t := e]
   pure (Var t)
@@ -122,10 +121,26 @@ lowerBits = go
             (TyU8 _, TyU8 _) -> go e
     one e = pure [e]
     bit e = onlyBit <$> go e
+
     boolOp f a b = do
-      x <- bit a
-      y <- bit b
+      x <- bit a >>= shareOperand a
+      y <- bit b >>= shareOperand b
       one (f x y)
+    shareOperand s e
+      -- This is a carefully designed bit of heuristic. Basically we are trying to
+      -- speed things up using the repertoire of samples programs. We found that
+      -- expressions like @a and b and c@ should not be split; binding either
+      -- subexpression to a temporary causes the Par block splitting to be less
+      -- effective, because @a and b@ causes them to be combined into a single
+      -- block. (Ugh! I don't like the fact that the Desugarer needs to know
+      -- optimization details in later passes.)
+      | isConnective s = pure e
+      | otherwise = share e
+    isConnective SAnd {} = True
+    isConnective SOr {} = True
+    isConnective SXor {} = True
+    isConnective (SNot _ e) = isConnective e
+    isConnective _ = False
     -- @clampWith@ says what saturation does to a result bit given the overflow
     -- bit: addition and multiplication clamp to 255 (all bits set),
     -- subtraction clamps to 0.
@@ -168,6 +183,9 @@ compareBits op as bs = do
     CmpGt -> lt bs as
     CmpLe -> mkNot <$> lt bs as
   where
+    -- Unlike 'rippleSub', this does not bind the operand bits to temporaries:
+    -- each bit is read exactly once here, and measured on the move-cars
+    -- examples, sharing them more than doubles the work.
     eq = foldr1 mkAnd [mkNot (mkXor a b) | (a, b) <- zip as bs]
     lt xs ys = snd <$> rippleSub xs ys
 

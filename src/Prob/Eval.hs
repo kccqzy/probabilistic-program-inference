@@ -88,6 +88,8 @@ evalStmt s@(While _ e stmt:next) = do
   if e'
     then evalStmt stmt >> evalStmt s
     else evalStmt next
+-- The blocks commute, so any order is the meaning; this one is as good as any.
+evalStmt (Par _ blocks:next) = mapM_ evalStmt blocks >> evalStmt next
 
 evalProg :: Prog Int -> Eval s [Bool]
 evalProg (ReturnMult stmt exprs) = evalStmt stmt >> traverse evalExpr exprs

@@ -121,6 +121,20 @@ substituteStmt (While o expr s) = do
       where
         entry' = intersectKnown entry afterBody
         afterBody = execState (substituteExpr expr >>= \g -> modify' (assuming g True) >> substituteStmts s) entry
+substituteStmt (Par _ []) = pure []
+substituteStmt (Par o blocks) = do
+  -- A fact about a variable some block writes must not be used inside
+  -- another block: a copy @x = u@ from before the node, with @u@ written by
+  -- block A, would let block B read @u@, which the 'Par' invariants forbid.
+  initial <- get
+  let result = (\block -> runState (substituteStmts block) initial) <$> blocks
+      blocks' = fst <$> result
+      finalKnown = foldr1 intersectKnown (snd <$> result)
+  put finalKnown
+  pure $ case filter (not . null) (toList blocks') of
+    [] -> []
+    [b] -> b
+    bs -> [Par o bs]
 
 -- | The variable assignments that must hold whenever the expression evaluates
 -- to the given value: a conjunction being true pins every conjunct, a

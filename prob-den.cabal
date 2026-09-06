@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: "=\132\175\254\244\159\214^\150\192'\EOT\187\ESC\213\234d1\146\144\arc.'\148\186\&9\226A\246]"
+-- hash: "9P\130\195\249l\184\216U;z\238<\216kyf\172\NAK\DC2k\151~D\US\176\213H\195 r="
 
 name:           prob-den
 version:        0.1.0.0
@@ -38,6 +38,7 @@ library
       Prob.Desugar
       Prob.Eval
       Prob.LinearEq
+      Prob.Liveness
       Prob.Matrix
       Prob.Parse
       Prob.Pipeline
