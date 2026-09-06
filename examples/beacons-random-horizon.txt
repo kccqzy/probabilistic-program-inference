@@ -1,0 +1,30 @@
+/* Three beacons flash independently, once per second at most: A with
+   probability 1/2, B with 1/4 and C with 1/8. We watch until A has flashed
+   four times, and then ask how often B and C flashed in the meantime, counting
+   no further than three.
+
+   Nothing here counts the seconds, so the loop has no monotone part to sweep
+   along: every block draws, the loop head can return to a state it has been in
+   before, and the answer has to come out of the kernels. The loop guard looks
+   at A alone, so the whole guard test belongs to A's block and there is
+   nothing left over to do after the three blocks have been stepped.
+
+   B and C are independent of each other and of A, and yet their counts come
+   out correlated: they share a stopping time, and a watch that ran long is a
+   watch in which both of them flashed more. */
+
+flashA, flashB, flashC: u8;
+f: bool;
+
+do {
+    f ~ bernoulli 0.5;
+    if f then { flashA := flashA + 1 }
+
+    f ~ bernoulli 0.25;
+    if f and flashB < 3 then { flashB := flashB + 1 }
+
+    f ~ bernoulli 0.125;
+    if f and flashC < 3 then { flashC := flashC + 1 }
+} while flashA < 4;
+
+return flashB, flashC;

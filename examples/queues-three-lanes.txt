@@ -1,0 +1,40 @@
+/* Three checkout lanes, each with its own queue, start the hour with two
+   customers apiece. Every minute, and in every lane independently, a customer
+   joins the queue with probability 1/4 (unless the lane is already full at
+   four) and the cashier finishes serving one with probability 3/4 (unless the
+   lane is empty). The manager can lock the door as soon as all three lanes are
+   simultaneously empty, and gives up waiting after ten minutes.
+
+   The three lanes never look at each other: they meet only in the loop guard,
+   which asks whether all of them are empty. This does not need any equation
+   solving. Every person can see that the loop runs for at most 9 iterations,
+   so running it 9 iterations suffices.
+*/
+
+q1, q2, q3: u8;
+minute: u8;
+ev: bool;
+
+q1 := 2;
+q2 := 2;
+q3 := 2;
+
+do {
+    minute := minute + 1;
+
+    ev ~ bernoulli 0.25;
+    if ev and q1 < 4 then { q1 := q1 + 1 }
+    ev ~ bernoulli 0.75;
+    if ev and q1 > 0 then { q1 := q1 - 1 }
+
+    ev ~ bernoulli 0.25;
+    if ev and q2 < 4 then { q2 := q2 + 1 }
+    ev ~ bernoulli 0.75;
+    if ev and q2 > 0 then { q2 := q2 - 1 }
+
+    ev ~ bernoulli 0.25;
+    if ev and q3 < 4 then { q3 := q3 + 1 }
+    ev ~ bernoulli 0.75;
+    if ev and q3 > 0 then { q3 := q3 - 1 }
+} while not (q1 == 0 and q2 == 0 and q3 == 0) and minute < 10;
+return minute;

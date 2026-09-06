@@ -1,0 +1,32 @@
+/* A workshop has three machines. Every hour machine A turns out 0 or 1 parts,
+   machine B — the fast one — turns out 0 to 3, and machine C turns out 0 or 1,
+   each uniformly and independently of the others and of the past. The shift is
+   over once the three of them together have made twelve parts, or after eight
+   hours, whichever comes first.
+
+   Each machine's tally is its own affair; the three meet only in the loop
+   guard, and there they meet through arithmetic rather than a single bit, so
+   the work of adding the tallies up and comparing them to the quota is left
+   over after the machines have been stepped separately.
+
+   Reported: the length of the shift, and whether B alone out-produced A and C
+   together. */
+
+madeA, madeB, madeC: u8;
+hour: u8;
+r: u8;
+
+do {
+    hour := hour + 1;
+
+    r ~ uniform 0 1;
+    madeA := madeA + r;
+
+    r ~ uniform 0 3;
+    madeB := madeB + r;
+
+    r ~ uniform 0 1;
+    madeC := madeC + r;
+} while madeA + madeB + madeC < 12 and hour < 8;
+
+return hour, madeB > madeA + madeC;

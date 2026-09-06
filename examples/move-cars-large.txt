@@ -1,0 +1,37 @@
+// Same as move-cars.txt but larger.
+
+car1, car2, car3, car4, car5, car6: u8;
+count: u8;
+coin: bool;
+moveCar1, moveCar2, moveCar3, moveCar4, moveCar5, moveCar6: bool;
+
+car1 := 1;
+car2 := 2;
+car3 := 3;
+car4 := 4;
+car5 := 5;
+car6 := 6;
+
+do {
+    coin ~ bernoulli 0.5;
+    moveCar6 := car6 < 12 and coin;
+    coin ~ bernoulli 0.5;
+    moveCar5 := car6 != car5 + 1 and coin;
+    coin ~ bernoulli 0.5;
+    moveCar4 := car5 != car4 + 1 and coin;
+    coin ~ bernoulli 0.5;
+    moveCar3 := car4 != car3 + 1 and coin;
+    coin ~ bernoulli 0.5;
+    moveCar2 := car3 != car2 + 1 and coin;
+    coin ~ bernoulli 0.5;
+    moveCar1 := car2 != car1 + 1 and coin;
+
+    count := count + 1;
+    if moveCar6 then { car6 := car6 + 1 }
+    if moveCar5 then { car5 := car5 + 1 }
+    if moveCar4 then { car4 := car4 + 1 }
+    if moveCar3 then { car3 := car3 + 1 }
+    if moveCar2 then { car2 := car2 + 1 }
+    if moveCar1 then { car1 := car1 + 1 }
+} while not (car6 == 12 and car5 == 11 and car4 == 10 and car3 == 9 and car2 == 8 and car1 == 7) and count <= 50;
+return count;

@@ -1,0 +1,39 @@
+/* Three archers shoot at their own targets. A round works like this: an archer
+   keeps shooting for as long as they keep hitting, and scores a point for every
+   hit; the first miss ends their round. Their hit rates are 1/2, 5/8 and 3/4,
+   so a round is worth a geometric number of points, with a different mean for
+   each of them. The match is over once somebody has six points, and in any case
+   after five rounds.
+
+   Each archer's round is itself a loop, and it touches nobody else's score, so
+   the loops end up nested inside the blocks: the outer loop is split into
+   blocks that are themselves loops, solved once per score rather than once per
+   triple of scores. The guard is a conjunction, so the first two archers share
+   a block and the third gets one of its own, next to the round counter.
+
+   Reported: the length of the match, and whether the slowest archer got there. */
+
+scoreA, scoreB, scoreC: u8;
+round: u8;
+hit: bool;
+
+do {
+    round := round + 1;
+
+    do {
+        hit ~ bernoulli 0.5;
+        if hit and scoreA < 6 then { scoreA := scoreA + 1 }
+    } while hit;
+
+    do {
+        hit ~ bernoulli 0.625;
+        if hit and scoreB < 6 then { scoreB := scoreB + 1 }
+    } while hit;
+
+    do {
+        hit ~ bernoulli 0.75;
+        if hit and scoreC < 6 then { scoreC := scoreC + 1 }
+    } while hit;
+} while scoreA < 6 and scoreB < 6 and scoreC < 6 and round < 5;
+
+return round, scoreA >= 6;

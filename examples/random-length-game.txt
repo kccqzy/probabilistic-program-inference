@@ -1,0 +1,30 @@
+/* Three players sit at a table. Every round each of them independently wins a
+   chip, with their own probability; nobody ever loses one. The round ends with
+   the house rolling a die, and the game is over as soon as it shows a six (or
+   after ten rounds, whichever comes first).
+
+   The three purses never influence each other. Yet the answers below are not
+   the product of three independent answers: the players share the length of
+   the game, and a game that ran long is a game in which everyone did well. */
+
+purseA, purseB, purseC: u8;
+die: u8;
+round: u8;
+win: bool;
+
+do {
+    round := round + 1;
+
+    win ~ bernoulli 0.5;
+    if win then { purseA := purseA + 1 }
+
+    win ~ bernoulli 0.35;
+    if win then { purseB := purseB + 1 }
+
+    win ~ bernoulli 0.7;
+    if win then { purseC := purseC + 1 }
+
+    die ~ uniform 1 6;
+} while die != 6 and round < 10;
+
+return purseA >= 3, purseB >= 3, purseC >= 3;
