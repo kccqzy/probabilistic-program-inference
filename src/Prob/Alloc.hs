@@ -35,7 +35,7 @@ import Data.Foldable
 import Data.Graph (buildG, indegree)
 import qualified Data.IntMap.Strict as IM
 import qualified Data.IntSet as IS
-import qualified Data.Map.Merge.Strict as MM
+import qualified Data.Map.Merge.Set.Strict as MMS
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import Data.Ord (Down (..), comparing)
@@ -263,7 +263,7 @@ scheduleStmts out ss = (liveIn, greedy)
         commit i = (Set.filter stillLive (open `Set.union` wi), left, Set.size (Set.intersection wi open))
           where
             wi = webs IM.! i
-            left = MM.merge MM.preserveMissing MM.dropMissing (MM.zipWithMaybeMatched (\_ c _ -> if c == 1 then Nothing else Just (c - 1))) remaining (M.fromSet (const ()) wi)
+            left = MMS.merge MMS.preserveMissing MMS.dropMissingSet (MMS.mapMaybeMatched (\_ c -> if c == 1 then Nothing else Just (c - 1))) remaining wi
             stillLive w = w `Set.member` out || w `M.member` left
         (pick, (open', remaining', _)) =
           minimumBy (comparing (\(i, (o, _, shared)) -> (orderingPreferences IM.! i, Set.size o, Down shared, i))) [(i, commit i) | i <- IS.toList ready]
