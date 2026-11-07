@@ -258,11 +258,11 @@ emitStmt s0 =
       -- prelude has to appear at both of those points. A `never` overflow in a
       -- guard therefore conditions the program once per evaluation, and the
       -- rejections compound across iterations.
-      (guardStmts, e') <- capture (lowerBool e >>= share)
+      (guardStmts, e') <- capture (lowerBool e)
       emit guardStmts
       emit [While lbl e' (toList (desugarStmts body Seq.>< guardStmts))]
     SDoWhile lbl body e -> do
-      (guardStmts, e') <- capture (lowerBool e >>= share)
+      (guardStmts, e') <- capture (lowerBool e)
       let desugaredBody = desugarStmts body
           stmts = desugaredBody Seq.>< guardStmts
       emit stmts
@@ -274,21 +274,19 @@ emitAssign x e =
     TyBool -> do
       e' <- lowerBool e
       emit [BoolVar x := e']
-    TyU8 _
-      | SVar _ y <- e,
-        y == x ->
-          pure () -- self-assignment: a no-op
-      | otherwise -> do
-          rs <- lowerBits e
-          -- For arithmetic, in case the variable to be assigned is mentioned in
-          -- the expression, it is more likely that we can avoid buffering bits
-          -- if we assign from MSB to LSB. Consider the common increment
-          -- expression (`x := x + 1`); if we assign from MSB to LSB then there
-          -- is no need for any temporary variables. So we assign from MSB to
-          -- LSB. We still have the detection in place in case temporaries are
-          -- needed.
-          irs' <- traverse buffer (zip [7, 6 .. 0] (reverse rs))
-          emit $ Seq.fromList [U8Var x i := r | (i, r) <- irs', r /= Var (U8Var x i)]
+    TyU8 _ -> do
+      rs <- lowerBits e
+      -- For arithmetic, in case the variable to be assigned is mentioned in
+      -- the expression, it is more likely that we can avoid buffering bits
+      -- if we assign from MSB to LSB. Consider the common increment
+      -- expression (`x := x + 1`); if we assign from MSB to LSB then there
+      -- is no need for any temporary variables. So we assign from MSB to
+      -- LSB. We still have the detection in place in case temporaries are
+      -- needed.
+      irs' <- traverse buffer (zip [7, 6 .. 0] (reverse rs))
+      -- A bit that would be assigned to itself is skipped, which makes a
+      -- self-assignment @x := x@ emit nothing at all.
+      emit $ Seq.fromList [U8Var x i := r | (i, r) <- irs', r /= Var (U8Var x i)]
   where
     buffer ir@(i, r)
       | any (readsTarget i) r = do
