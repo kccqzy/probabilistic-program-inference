@@ -354,9 +354,7 @@ clique ws g = foldl' (\g' (a, b) -> edge a b g') g [(a, b) | a <- l, b <- l, a <
 gen :: (Ord w) => Expr w -> I w ()
 gen = modify' . first . Set.union . Set.fromList . toList
 
--- | Two webs interfere when one is defined while the other is live. We do not
--- use overlapping live ranges. Intentional dead stores have an empty live range
--- and would otherwise be free to land on top of a live web.
+-- | Two webs interfere when one is defined while the other is live.
 def :: (Ord w) => w -> I w ()
 def x = modify' (\(l, g) -> let out = Set.delete x l in (out, foldl' (flip (edge x)) g (Set.toList out)))
 
