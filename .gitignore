@@ -1,5 +1,8 @@
 /.stack-work/
 /dist-newstyle/
+/dist-prof/
 .DS_Store
 *.prof
 /TODOs/
+/scripts/
+/prebuilt/
