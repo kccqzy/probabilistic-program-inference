@@ -565,12 +565,17 @@ partitionBody body
       | null prefixIdx = []
       | otherwise = map (sort . flatten) (components (buildG (0, suffixStart - 1) (chains ++ map swap chains)))
     owner0 = M.fromList [(w, Block k) | (k, is) <- zip [0 ..] comps, i <- is, w <- Set.toList (writesOf IM.! i)]
+    -- The blocks whose statements mention each web. A web the join writes can
+    -- still be mentioned in a block, by a statement that reads last
+    -- iteration's value of it.
+    mentionedIn = M.fromListWith IS.union [(w, IS.singleton k) | (k, is) <- zip [0 ..] comps, i <- is, w <- Set.toList (mentionsOf IM.! i)]
 
     -- Step 3. Walk the join in order. A statement sinks into block k when
     -- every body-written web it reads is owned by k, nothing it writes is
-    -- owned elsewhere, and no retained statement reads what it writes; it
-    -- then comes after everything it depends on and before nothing that
-    -- depends on it. Otherwise it stays, and owns what it writes.
+    -- owned elsewhere or mentioned by another block, and no retained
+    -- statement reads what it writes; it then comes after everything it
+    -- depends on and before nothing that depends on it. Otherwise it stays,
+    -- and owns what it writes.
     (_, _, sunk, retained) = foldl' place (owner0, Set.empty, IM.empty, []) [suffixStart .. n - 1]
     place (owner, retainedReads, sunkAcc, retainedAcc) i =
       case target of
@@ -596,6 +601,7 @@ partitionBody body
             Just (Block k) : _
               | all (== Just (Block k)) readOwners,
                 all (== Block k) writeOwners,
+                all (\w -> M.findWithDefault IS.empty w mentionedIn `IS.isSubsetOf` IS.singleton k) ws,
                 not (any (`Set.member` retainedReads) ws) ->
                   Just k
             _ -> Nothing

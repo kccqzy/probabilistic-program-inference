@@ -1,0 +1,22 @@
+/* A delay line: every round a coin is flipped, and the game stops on the round
+   after the first head, so the head is seen one round late through w. z
+   records whether a head came up before the last round.
+
+   The body splits into a block for the coin and a block for "y := w". The
+   update of w reads only the coin's block and so looks worth moving into it,
+   but it must not be moved: the other block reads w, and has to see last
+   round's value.
+
+   Reported: the last flip, uniform since the game stops a round late; and z,
+   which is always true. */
+
+a, w, y, z: bool;
+
+while not y do {
+  z := z or a;
+  a ~ bernoulli 0.5;
+  y := w;
+  w := a;
+}
+
+return a, z;
