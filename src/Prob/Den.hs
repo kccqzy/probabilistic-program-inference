@@ -110,18 +110,28 @@ findCarried footprint stmts = footprint IS.\\ (mustWrite IS.\\ mayRead)
 -- @i@ at all. Here, the counter is the part of the loop that does not interact
 -- with other stochastic variables. This actually allows more sophisticated
 -- counters as long as they are fully deterministic.
+--
+-- The join may write carried variables (a flag set on one branch of an @if@,
+-- say), and a block that reads such a variable before writing it depends,
+-- through the join, on the other blocks, so its next value is no longer a
+-- function of its own. Such a block does not qualify. A block that merely
+-- shares a variable with the join, which coloring does to dead temporaries all
+-- the time, still does; but what the join writes is left out of the counter
+-- even then, since a block that writes a variable on one branch only keeps the
+-- join's value on the other. The counter is only a heuristic for
+-- 'deterministicTransition', which is exact whatever the counter is, so
+-- leaving a variable out costs speed, never correctness.
 findCounter :: IS.IntSet -> [Stmt Int] -> IS.IntSet
-findCounter carried stmts = IS.intersection carried (IS.fromList (concatMap (concatMap stmtWrites) (filter (not . any stmtSamples) blocks)))
+findCounter carried stmts =
+  IS.intersection (carried IS.\\ joinWrites) (IS.fromList (concatMap (concatMap stmtWrites) (filter qualifies blocks)))
   where
-    blocks =
+    (blocks, joinWrites) =
       case stmts of
-        Par _ bs : remainder ->
-          -- Anything after the 'Par' is the join, which must not write anything carried.
-          if all (IS.disjoint carried . IS.fromList . stmtWrites) remainder
-          then bs
-          else error "internal error: post-Par block join must not write carried"
-        _ -> [stmts]
-          -- A block that is not split counts as one block. The entire block may qualify as a counter.
+        Par _ bs : remainder -> (bs, IS.fromList (concatMap stmtWrites remainder))
+        -- A body that is not split counts as one block with an empty join. The
+        -- entire body may qualify as a counter.
+        _ -> ([stmts], IS.empty)
+    qualifies b = not (any stmtSamples b) && IS.disjoint joinWrites (flowMayReadBeforeWrite (foldMap flowStmt b))
 
 -- | What inference actually cost, as opposed to what a static estimate of it
 -- predicted. 'denStmts' pushes a whole distribution through one statement at a

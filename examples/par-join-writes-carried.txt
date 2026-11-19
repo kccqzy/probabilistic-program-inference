@@ -1,0 +1,22 @@
+/* Two coins are flipped every round, and each keeps a running parity. The game
+   stops once both parities are odd.
+
+   The two parities are independent, so the loop body splits into one block
+   per coin. The statement that ends the game reads both blocks, so it stays in
+   the join after them. It only writes the stop flag on one branch, which
+   leaves the flag carried into the next iteration. This must not crash
+   inference.
+
+   Reported: the two last flips. */
+
+stop, x, y, px, py: bool;
+
+while not stop do {
+  x ~ bernoulli 0.5;
+  px := px xor x;
+  y ~ bernoulli 0.25;
+  py := py xor y;
+  if px and py then { stop := true }
+}
+
+return x, y;
