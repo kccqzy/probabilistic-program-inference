@@ -49,3 +49,14 @@ tests:
     dependencies:
       - QuickCheck
       - prob-den
+
+benchmarks:
+  # Reads examples/ relative to the working directory, so run it from the
+  # project root.
+  examples-bench:
+    main: Bench.hs
+    source-dirs: bench
+    dependencies:
+      - criterion
+      - filepath
+      - prob-den

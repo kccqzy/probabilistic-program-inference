@@ -7,14 +7,11 @@ import Control.Monad
 import Data.Coerce
 import qualified Data.IntMap as IM
 import Options.Applicative
-import Prob.Alloc (allocIntProg)
-import Prob.CoreAST (toIntProg, Prog)
-import Prob.CoreOpt
+import Prob.CoreAST (Prog)
 import Prob.Den (InferStats(..), InferLoopStats(..), denProgStats)
 import Prob.Eval (sampled)
-import Prob.SurfaceAST (reportedVars)
-import Prob.Desugar
 import Prob.Parse
+import Prob.Pipeline (compileProgram, programDisplay)
 import Prob.Pretty
 import System.Exit
 import System.IO
@@ -65,17 +62,8 @@ run (m, Optimize opt, DumpCore dc, DumpInferStats dis, args) =
     case r of
       Left e -> hPutStr stderr e >> exitWith (ExitFailure 1)
       Right p -> do
-        let display =
-              case pgRetTy p of
-                Just tys -> Returned tys
-                -- When the program does not have a return the columns are the
-                -- reported vars in name order. This is safe because
-                -- @desugarProgram@ makes the same choice.
-                Nothing -> Columns (reportedVars (pgSurface p))
-        let desugared = desugarProgram (pgSurface p)
-            intProg = if opt
-                      then allocIntProg (substituteProgram desugared)
-                      else toIntProg desugared
+        let display = programDisplay p
+            intProg = compileProgram opt p
         when dc $ hPutStrLn stderr (groom (toVarProg intProg))
         results <- case m of
           ModeDen -> do

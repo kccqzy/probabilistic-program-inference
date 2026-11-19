@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: "\197\132f\236\&9\ETB\151\159^\215h\139\138\172\131\158\164&TZ\214\176\208(\168\DC3\128\151\175\217\225\172"
+-- hash: "=\132\175\254\244\159\214^\150\192'\EOT\187\ESC\213\234d1\146\144\arc.'\148\186\&9\226A\246]"
 
 name:           prob-den
 version:        0.1.0.0
@@ -40,6 +40,7 @@ library
       Prob.LinearEq
       Prob.Matrix
       Prob.Parse
+      Prob.Pipeline
       Prob.Pretty
       Prob.SurfaceAST
       Prob.TypeCheck
@@ -102,6 +103,30 @@ test-suite linear-eq-test
     , array
     , base
     , containers >=0.8.1
+    , megaparsec >=8.0.0
+    , mtl
+    , mwc-random
+    , parser-combinators >=1.0.0
+    , prob-den
+    , scientific >=0.3.6.0
+    , text
+    , transformers
+  default-language: Haskell2010
+
+benchmark examples-bench
+  type: exitcode-stdio-1.0
+  main-is: Bench.hs
+  other-modules:
+      Paths_prob_den
+  hs-source-dirs:
+      bench
+  ghc-options: -Wall -O2
+  build-depends:
+      array
+    , base
+    , containers >=0.8.1
+    , criterion
+    , filepath
     , megaparsec >=8.0.0
     , mtl
     , mwc-random
