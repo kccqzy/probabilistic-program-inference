@@ -1,0 +1,25 @@
+/* A light toggles every round, and a coin keeps a running parity. The game
+   stops once the parity is odd while the light is off.
+
+   The body splits into a block for the light and a block for the coin. t
+   lives only between the two join statements that read both blocks, and s,
+   which reads only the light, is moved into the light's block, ahead of them.
+   t and s must therefore not share a variable, although in the order written
+   t is dead before s is defined.
+
+   Reported: the last coin, and whether the light was on before the last
+   round. */
+
+x, y, c, t, h, s, on: bool;
+
+do {
+  on := x;
+  x := not x;
+  c ~ bernoulli 0.5;
+  y := y xor c;
+  t := x and y;
+  h := t or y;
+  s := not x;
+} while not (h and s);
+
+return c, on;

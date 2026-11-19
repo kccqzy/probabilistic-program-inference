@@ -11,8 +11,9 @@
 -- are split into webs, webs that are never live at the same time are allowed to
 -- collide, and the resulting interference graph is colored greedily. Slicing
 -- and interference are two clients of the same backward liveness analysis, so
--- one walk serves both, and the interference graph is built for the sliced
--- program.
+-- one walk serves both. It is run twice: once to slice, and again after loop
+-- bodies have been partitioned, since partitioning moves statements and the
+-- interference graph must describe the program as it will be colored.
 --
 -- A word on what all of this is for, because it is easy to optimise the wrong
 -- thing. What we are trying to make small is the work 'Prob.Den' does, which is
@@ -53,9 +54,22 @@ import Prob.Liveness (liveIn, liveIns)
 allocIntProg :: (Ord vt) => Prog vt -> Prog Int
 allocIntProg p = relabelLoops ((colors M.!) <$> parted)
   where
-    (sliced, g) = sliceInterfere (scheduleProg (webProg p))
-    (parted, g') = partitionLoops sliced g
-    colors = color g'
+    (sliced, _) = sliceInterfere (scheduleProg (webProg p))
+    (parted, cross) = partitionLoops sliced
+    -- Interference must be worked out on the partitioned program: sinking
+    -- moves join statements ahead of others, and a web defined by a sunk
+    -- statement is then live across statements it used to follow. The walk
+    -- treats each 'Par' as its blocks in sequence; the cross edges take care
+    -- of every other order.
+    --
+    -- Running 'sliceInterfere' twice costs little. The first graph is never
+    -- demanded, so laziness leaves it as an unevaluated chain of thunks and no
+    -- edges are built. The second walk removes nothing, as partitioning only
+    -- moves statements; what it repeats is the liveness analysis, which the
+    -- graph needs anyway. So the price is one extra liveness pass, which is
+    -- negligible next to inference.
+    (_, g) = sliceInterfere parted
+    colors = color (M.unionWith Set.union g cross)
 
 -- | Give the loops labels that are equal iff when the loops are identical.
 -- "Prob.Den" caches solved loop kernels by label, and a kernel is a property of
@@ -461,9 +475,10 @@ sliceStmt (Par o blocks) = do
 --------------------------------------------------------------------------------
 
 -- | Split the body of every loop into a 'Par' of independent blocks followed
--- by the statements that combine them, and add the interference edges that
--- keep the blocks' webs apart through coloring, so the 'Par' invariant holds
--- of the numbered program too.
+-- by the statements that combine them. Also return the interference edges
+-- that keep the blocks' webs apart through coloring, so the 'Par' invariant
+-- holds of the numbered program too; they are needed on top of those of a
+-- sequential walk over the result, which only sees the blocks in one order.
 --
 -- The body of a loop often has independent parts that meet only in the guard:
 -- say we have the actual stochastic procedure being modeled and the iteration
@@ -494,10 +509,10 @@ sliceStmt (Par o blocks) = do
 --
 -- A body that does not split into at least two blocks is left exactly as it
 -- was. Inner loops are split before the loop around them.
-partitionLoops :: (Ord w) => Prog w -> Graph w -> (Prog w, Graph w)
-partitionLoops (ReturnMult ss es) g = (ReturnMult ss' es, g')
+partitionLoops :: (Ord w) => Prog w -> (Prog w, Graph w)
+partitionLoops (ReturnMult ss es) = (ReturnMult ss' es, g)
   where
-    (ss', (_, g')) = runState (traverse partStmt ss) (0, g)
+    (ss', (_, g)) = runState (traverse partStmt ss) (0, M.empty)
 
 partStmt :: (Ord w) => Stmt w -> State (Int, Graph w) (Stmt w)
 partStmt (If e s1 s2) = If e <$> traverse partStmt s1 <*> traverse partStmt s2
